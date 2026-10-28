@@ -12,9 +12,10 @@ Temperature 0 and seed 7 for both models.
 **What reproduced.** All five runs produced identical actions and categories
 (stability 100%), and token totals were identical too (30,109 in / 2,295 out per
 run): at temperature 0 with a fixed seed, Ollama was fully repeatable on this machine.
-An earlier 5-run evaluation on a slightly older build produced the same accuracies and
-the same token totals. Wall time is the least stable number: 96–125 s per run here,
-73–110 s in the earlier session (the machine was also running other work). Treat timings
+Two earlier 5-run evaluations (one on a slightly older build) produced the same
+accuracies and the same token totals, so the result reproduced three times. Wall time
+is the least stable number: 112–136 s per run in this session, 73–125 s in earlier
+ones, depending on what else the machine was doing. Treat timings
 as indicative. Model output can differ on other hardware, so a re-run elsewhere may not
 reproduce these numbers exactly.
 

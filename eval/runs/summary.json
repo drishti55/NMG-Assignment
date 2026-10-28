@@ -1,0 +1,288 @@
+{
+  "eval_id": "eval-20261028T100134Z-079d",
+  "created_at": "2026-10-28T10:11:45.444769+00:00",
+  "config": {
+    "triage_model": "qwen2.5:1.5b",
+    "draft_model": "qwen2.5:3b",
+    "embed_model": "nomic-embed-text",
+    "drafting": true,
+    "temperature": 0.0,
+    "seed": 7,
+    "runs": 5,
+    "retrieval_top_k": 3,
+    "retrieval_min_score": 0.5
+  },
+  "per_run": [
+    {
+      "action_accuracy": 0.7916666666666666,
+      "category_accuracy": 0.875,
+      "priority_accuracy": 0.625,
+      "injection_recall": 1.0,
+      "injection_false_positive_rate": 0.0,
+      "injection_false_positives": [],
+      "tokens_in": 30109,
+      "tokens_out": 2295,
+      "failed": 0
+    },
+    {
+      "action_accuracy": 0.7916666666666666,
+      "category_accuracy": 0.875,
+      "priority_accuracy": 0.625,
+      "injection_recall": 1.0,
+      "injection_false_positive_rate": 0.0,
+      "injection_false_positives": [],
+      "tokens_in": 30109,
+      "tokens_out": 2295,
+      "failed": 0
+    },
+    {
+      "action_accuracy": 0.7916666666666666,
+      "category_accuracy": 0.875,
+      "priority_accuracy": 0.625,
+      "injection_recall": 1.0,
+      "injection_false_positive_rate": 0.0,
+      "injection_false_positives": [],
+      "tokens_in": 30109,
+      "tokens_out": 2295,
+      "failed": 0
+    },
+    {
+      "action_accuracy": 0.7916666666666666,
+      "category_accuracy": 0.875,
+      "priority_accuracy": 0.625,
+      "injection_recall": 1.0,
+      "injection_false_positive_rate": 0.0,
+      "injection_false_positives": [],
+      "tokens_in": 30109,
+      "tokens_out": 2295,
+      "failed": 0
+    },
+    {
+      "action_accuracy": 0.7916666666666666,
+      "category_accuracy": 0.875,
+      "priority_accuracy": 0.625,
+      "injection_recall": 1.0,
+      "injection_false_positive_rate": 0.0,
+      "injection_false_positives": [],
+      "tokens_in": 30109,
+      "tokens_out": 2295,
+      "failed": 0
+    }
+  ],
+  "aggregate": {
+    "runs": 5,
+    "tickets": 24,
+    "action_accuracy": 0.7917,
+    "category_accuracy": 0.875,
+    "priority_accuracy": 0.625,
+    "injection_recall": 1.0,
+    "injection_false_positive_rate": 0.0,
+    "action_accuracy_min_max": [
+      0.7917,
+      0.7917
+    ],
+    "category_accuracy_min_max": [
+      0.875,
+      0.875
+    ],
+    "stability": 1.0,
+    "unstable_tickets": [],
+    "tokens_in_total": 150545,
+    "tokens_out_total": 11475
+  },
+  "wall_time_s": {
+    "per_run": [
+      123.91,
+      136.27,
+      114.26,
+      123.53,
+      112.49
+    ],
+    "total": 610.46
+  },
+  "per_ticket_errors": [
+    {
+      "ticket_id": "NW-T03",
+      "runs": 5,
+      "mismatches": {
+        "action": {
+          "expected": "ask_for_info",
+          "got": {
+            "draft_reply": 5
+          }
+        },
+        "priority": {
+          "expected": "high",
+          "got": {
+            "normal": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "NW-T04",
+      "runs": 5,
+      "mismatches": {
+        "priority": {
+          "expected": "high",
+          "got": {
+            "normal": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "NW-T05",
+      "runs": 5,
+      "mismatches": {
+        "priority": {
+          "expected": "low",
+          "got": {
+            "normal": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "NW-T08",
+      "runs": 5,
+      "mismatches": {
+        "priority": {
+          "expected": "low",
+          "got": {
+            "normal": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "NW-T11",
+      "runs": 5,
+      "mismatches": {
+        "action": {
+          "expected": "draft_reply",
+          "got": {
+            "escalate": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "NW-T12",
+      "runs": 5,
+      "mismatches": {
+        "category": {
+          "expected": "other",
+          "got": {
+            "warranty_repair": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "HD-T04",
+      "runs": 5,
+      "mismatches": {
+        "priority": {
+          "expected": "high",
+          "got": {
+            "urgent": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "HD-T05",
+      "runs": 5,
+      "mismatches": {
+        "action": {
+          "expected": "draft_reply",
+          "got": {
+            "escalate": 5
+          }
+        },
+        "category": {
+          "expected": "billing_payments",
+          "got": {
+            "clinical": 5
+          }
+        },
+        "priority": {
+          "expected": "low",
+          "got": {
+            "normal": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "HD-T06",
+      "runs": 5,
+      "mismatches": {
+        "action": {
+          "expected": "draft_reply",
+          "got": {
+            "escalate": 5
+          }
+        },
+        "category": {
+          "expected": "billing_payments",
+          "got": {
+            "clinical": 5
+          }
+        },
+        "priority": {
+          "expected": "low",
+          "got": {
+            "normal": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "HD-T07",
+      "runs": 5,
+      "mismatches": {
+        "priority": {
+          "expected": "high",
+          "got": {
+            "urgent": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "HD-T09",
+      "runs": 5,
+      "mismatches": {
+        "priority": {
+          "expected": "low",
+          "got": {
+            "normal": 5
+          }
+        }
+      }
+    },
+    {
+      "ticket_id": "HD-T11",
+      "runs": 5,
+      "mismatches": {
+        "action": {
+          "expected": "ask_for_info",
+          "got": {
+            "draft_reply": 5
+          }
+        }
+      }
+    }
+  ],
+  "exceptions": [],
+  "detector_suite": {
+    "cases": 26,
+    "positives": 14,
+    "negatives": 12,
+    "recall": 1.0,
+    "false_positive_rate": 0.0,
+    "false_positives": []
+  }
+}

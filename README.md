@@ -99,13 +99,18 @@ mode is presentation only; it does not change what the backend authorizes.
 ## Measured results (from this machine)
 
 * **Hardware:** Apple M5, 16 GB RAM, macOS (Darwin 25.5). Docker Desktop 29.7, Ollama 0.24.
-* **`make demo`** from an empty database volume, with models pulled, Docker image and
-  Python deps cached: **77 s** wall time (inboxes: 73 s for 24 tickets). A truly clean
-  clone adds the `pgvector/pgvector:pg17` image pull and `uv sync` (about 1 minute on a
-  fast connection).
+* **`make demo` from a fresh `git clone`** (no `.venv`, no outputs, empty database volume):
+  **90 s** wall time, of which 78 s processing the 24 tickets. The Docker image, uv
+  package cache and Ollama models were already on this machine; a new machine adds the
+  `pgvector/pgvector:pg17` image pull and dependency downloads.
+* **Committed outputs** (`out/`) come from a fresh `make demo` in this repository
+  (85 s). Two drafts (NW-T01, HD-T09) were read against the KB and approved, and one
+  (NW-T02) was rejected with a reason; its redraft is still pending. The approver is
+  recorded as `claude-code-session` because the assistant, not the candidate, made
+  those decisions.
 * **Evaluation** (5 runs × 24 tickets, drafting on): action accuracy 79.2%, category 87.5%,
-  injection recall 100% with 0% false positives, stability 100%, about 9.3 minutes for
-  5 runs. See [EVAL](docs/EVAL.md).
+  injection recall 100% with 0% false positives, stability 100%, about 10 minutes for
+  5 runs (611 s); identical results in three separate evaluation sessions. See [EVAL](docs/EVAL.md).
 * **Tests:** 118 passed (`make test`).
 
 ## Assumptions

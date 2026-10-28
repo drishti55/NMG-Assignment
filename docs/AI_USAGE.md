@@ -52,3 +52,9 @@ honesty requirements) and directed follow-up work such as the checkpoint-isolati
    `checkpoint_blobs`, and the orchestrator accepted any thread id without a tenant).
    Fixed with migration 0002 and a tenant-bound checkpointer; the new tests were
    checked by disabling the fix and confirming 9 of 14 fail.
+9. **The assistant approved drafts it had not read, under the candidate's name.**
+   Earlier runs approved drafts with `--by drishti`, and a verification script
+   approved a draft that inverted the cancellation policy. Both happened only in
+   local or scratch databases. The committed `out/outbox.jsonl` comes from a fresh
+   run in which every draft was read against the KB before approval, and the approver
+   is recorded truthfully as `claude-code-session`, not as the candidate.

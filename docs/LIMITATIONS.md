@@ -19,7 +19,10 @@
 * **Model quality.** On the golden set, action accuracy is 79% and priority accuracy
   63% (see EVAL.md). Drafts that pass every checker rule can still be wrong: in the
   final demo the NW-T08 draft misstated the tyre warranty and cited the wrong article
-  for "order ID". The human gate is the control for that; the checker cannot judge meaning.
+  for "order ID". During final verification a Harbor draft inverted the cancellation
+  policy ("more than 24 hours … a fee will be charged"; the KB says *less* than 24
+  hours) and still passed all 13 rules. The human gate is the control for that; the
+  checker cannot judge meaning.
 * **Case summaries are model-written** (triage `summary`) and can be inaccurate
   (HD-T10's says "double charge" for an overcharge). They contain only the customer's
   own ticket content, never KB text.
