@@ -247,7 +247,11 @@ function Actions({ data, onChanged }: { data: TicketDetailData; onChanged: (thre
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ tone: "good" | "critical"; text: string } | null>(null);
+  const [result, setResult] = useState<{ tone: "good" | "critical"; text: string; started?: boolean } | null>(null);
+  // "Processing started" is only true while the ticket is processing; clear it when it finishes.
+  useEffect(() => {
+    if (view.state !== "processing") setResult((r) => (r?.started ? null : r));
+  }, [view.state]);
   const tenantName = TENANT[ticket.tenant_id] ?? ticket.tenant_id;
   const pending = approvals.find((a) => a.approval_id === view.pending_approval_id);
   const reasonOk = reason.trim().length >= 3;
@@ -259,7 +263,7 @@ function Actions({ data, onChanged }: { data: TicketDetailData; onChanged: (thre
     try {
       if (kind === "process") {
         const r = await post<{ thread_id: string }>(`/api/tickets/${ticket.tenant_id}/${encodeURIComponent(ticket.ticket_id)}/process`);
-        setResult({ tone: "good", text: "Processing started. Progress updates below as each step finishes (usually 5 to 15 seconds)." });
+        setResult({ tone: "good", started: true, text: "Processing started. Progress updates below as each step finishes (usually 5 to 15 seconds)." });
         onChanged(r.thread_id);
       } else {
         const r = await post<{ changed: boolean; outbox_written: boolean; thread_phase: string }>(
