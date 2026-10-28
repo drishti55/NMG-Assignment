@@ -60,7 +60,7 @@ def test_draft_reply_waits_for_approval_and_nothing_reaches_the_outbox(tmp_path)
     d = _decision("northwind", "NW-1")
     assert (d["action"], d["status"]) == ("draft_reply", "pending_approval")
     assert d["kb_refs"] == ["NW-KB-01"] and "NW-KB-01" in d["draft_reply"]
-    assert orch.phase("northwind:NW-1:g1") == "paused"
+    assert orch.phase("northwind", "northwind:NW-1:g1") == "paused"
     assert len(_pending()) == 1
     with tenant_tx("northwind") as conn:
         assert conn.execute("SELECT count(*) AS n FROM outbox").fetchone()["n"] == 0

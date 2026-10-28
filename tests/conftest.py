@@ -37,7 +37,6 @@ os.environ.setdefault("RELAY_BACKOFF_MAX_S", "0")
 get_settings.cache_clear()
 
 from relay import db as relay_db  # noqa: E402
-from relay import orchestrator  # noqa: E402
 from relay.gateway import ModelGateway, DbMeter  # noqa: E402
 from tests.fakes import FakeBackend  # noqa: E402
 
@@ -71,7 +70,6 @@ def database():
 def clean(database):
     with psycopg.connect(ADMIN_URL, autocommit=True) as conn:
         conn.execute(f"TRUNCATE {BUSINESS_TABLES} RESTART IDENTITY CASCADE")
-    orchestrator.checkpointer.cache_clear()
     get_settings.cache_clear()
     yield
 

@@ -40,13 +40,22 @@ def app_pool() -> ConnectionPool:
     )
 
 
+def clear_tenant(conn: psycopg.Connection) -> None:
+    """Unbind any session-level tenant. '' matches no tenant, so RLS fails closed."""
+    conn.execute("SELECT set_config('app.tenant_id', '', false)")
+
+
 @lru_cache
 def checkpoint_pool() -> ConnectionPool:
-    """Pool for PostgresSaver (it requires autocommit + dict rows)."""
+    """Pool for PostgresSaver (it requires autocommit + dict rows). Autocommit means a
+    transaction-local tenant setting would not survive between its statements, so the
+    tenant is bound per *session* (see orchestrator.tenant_checkpointer) and cleared
+    whenever a connection goes back to the pool."""
     s = get_settings()
     return ConnectionPool(
         s.database_url, min_size=1, max_size=10, open=True,
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        configure=clear_tenant, reset=clear_tenant,
     )
 
 
@@ -98,10 +107,17 @@ def tenant_registry() -> list[dict]:
 # ------------------------------------------------------------------ admin operations
 
 def migrate(admin_url: str | None = None, app_url: str | None = None) -> None:
-    """Apply Alembic migrations, register tenants, and set up checkpoint tables."""
+    """Create LangGraph's checkpoint tables, apply Alembic migrations (which put those
+    tables under RLS), and register tenants."""
     s = get_settings()
     admin_url = admin_url or s.admin_database_url
     env = {"RELAY_MIGRATION_URL": admin_url, "RELAY_APP_DB_PASSWORD": s.app_db_password}
+    # LangGraph's checkpoint tables first (idempotent), owned by the admin role.
+    from langgraph.checkpoint.postgres import PostgresSaver
+
+    with psycopg.connect(admin_url, autocommit=True, prepare_threshold=0,
+                         row_factory=dict_row) as cp_conn:
+        PostgresSaver(cp_conn).setup()
     subprocess.run(
         [sys.executable, "-m", "alembic", "-c", str(ROOT / "alembic.ini"), "upgrade", "head"],
         check=True, cwd=ROOT, env={**os.environ, **env},
@@ -119,13 +135,4 @@ def migrate(admin_url: str | None = None, app_url: str | None = None) -> None:
                 (t["tenant_id"], t["name"], t["kb_prefix"], t["aliases"],
                  t.get("clinical_restricted", False)),
             )
-        # LangGraph checkpoint tables, owned by admin, usable by relay_app.
-        from langgraph.checkpoint.postgres import PostgresSaver
-
-        with psycopg.connect(admin_url, autocommit=True, prepare_threshold=0,
-                             row_factory=dict_row) as cp_conn:
-            PostgresSaver(cp_conn).setup()
-        for table in ("checkpoints", "checkpoint_blobs", "checkpoint_writes",
-                      "checkpoint_migrations"):
-            conn.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO relay_app")
     tenant_ids.cache_clear()

@@ -174,6 +174,12 @@ def traced(name: str, deps: Deps) -> Callable[[Callable], Callable]:
 # ------------------------------------------------------------------ graph
 
 def build_graph(deps: Deps, checkpointer=None):
+    return build_workflow(deps).compile(checkpointer=checkpointer)
+
+
+def build_workflow(deps: Deps) -> StateGraph:
+    """The uncompiled graph. The orchestrator compiles it per operation against a
+    checkpointer bound to one tenant."""
     s = deps.settings
 
     def validate_input(state: RelayState) -> dict:
@@ -476,7 +482,7 @@ def build_graph(deps: Deps, checkpointer=None):
     g.add_edge("rejected_twice", "escalate_ticket")
     g.add_edge("write_approved_outbox", "finalize_run")
     g.add_edge("finalize_run", END)
-    return g.compile(checkpointer=checkpointer)
+    return g
 
 
 def _final_action(state: RelayState, status: DecisionStatus) -> Action:

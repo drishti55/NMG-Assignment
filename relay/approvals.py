@@ -91,7 +91,7 @@ def _decide(orch: Orchestrator, approval_id: str, actor: str, decision: str,
                         details={"approval_id": approval_id, "attempt": row["attempt"]})
             changed = True
 
-    phase = orch.resume_with_decision(row["thread_id"], {
+    phase = orch.resume_with_decision(tenant, row["thread_id"], {
         "approval_id": approval_id, "decision": decision, "actor": actor.strip(), "reason": reason,
     })
     with tenant_tx(tenant) as conn:
@@ -122,7 +122,7 @@ def reconcile(orch: Orchestrator) -> list[str]:
                    WHERE a.status IN ('approved','rejected') AND w.status = 'awaiting_approval'"""
             ).fetchall()
         for r in rows:
-            orch.resume_with_decision(r["thread_id"], {
+            orch.resume_with_decision(tenant, r["thread_id"], {
                 "approval_id": r["approval_id"], "decision": r["status"],
                 "actor": r["decided_by"], "reason": r["reason"],
             })

@@ -62,9 +62,23 @@ def run_checks(gateway: ModelGateway, sse_stats: dict | None = None) -> dict[str
         return stale == 0, detail + (f"; {stale} expired lease(s) awaiting reclaim" if stale else "")
 
     def checkpoints():
+        from relay.db import tenant_ids, tenant_tx
+
         with platform_tx() as conn:
-            n = conn.execute("SELECT count(DISTINCT thread_id) AS n FROM checkpoints").fetchone()["n"]
-        return True, f"PostgresSaver tables readable; {n} thread(s) checkpointed"
+            unbound = conn.execute("SELECT count(*) AS n FROM checkpoints").fetchone()["n"]
+            forced = conn.execute(
+                "SELECT bool_and(relrowsecurity AND relforcerowsecurity) AS ok FROM pg_class "
+                "WHERE relname IN ('checkpoints','checkpoint_blobs','checkpoint_writes')"
+            ).fetchone()["ok"]
+        per_tenant = {}
+        for t in sorted(tenant_ids()):
+            with tenant_tx(t) as conn:
+                per_tenant[t] = conn.execute(
+                    "SELECT count(DISTINCT thread_id) AS n FROM checkpoints").fetchone()["n"]
+        ok = bool(forced) and unbound == 0
+        return ok, ("RLS forced on checkpoint tables; " if forced else "checkpoint tables NOT under RLS; ") + \
+            ", ".join(f"{t}={n} thread(s)" for t, n in per_tenant.items()) + \
+            ("" if unbound == 0 else f"; {unbound} row(s) visible without a tenant (isolation broken)")
 
     for name, fn in (("postgres", postgres), ("pgvector", pgvector), ("ollama", ollama),
                      ("required_models", models), ("workers", workers), ("queue", queue),
