@@ -1,0 +1,125 @@
+PROJECT RELAY - RUN COMMANDS
+============================
+Run everything from the repository root. All commands are free and local.
+If `docker` is not found on macOS, prefix commands with:
+    export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+
+
+0. ONE-TIME SETUP
+-----------------
+# Install: Docker Desktop, uv (curl -LsSf https://astral.sh/uv/install.sh | sh),
+# Ollama (https://ollama.com/download), Node 18+ (only for the web console).
+ollama pull qwen2.5:1.5b          # triage model
+ollama pull qwen2.5:3b            # drafting model
+ollama pull nomic-embed-text      # embeddings (768 dimensions)
+open -a Docker                    # macOS: start the Docker daemon
+make check-deps                   # verifies Docker, uv, Ollama and all three models
+
+
+1. THE ONE COMMAND (assessment C1)
+----------------------------------
+make demo
+# = check deps -> start Postgres+pgvector -> migrations (schema, RLS, app role,
+#   checkpoint tables) -> embed both KBs -> process both inboxes -> print the
+#   approval queue and the escalation cases. Writes out/decisions.jsonl.
+
+
+2. HUMAN APPROVAL (assessment C5)
+---------------------------------
+make approve                                          # list pending drafts + checker results
+uv run relay approvals list --all                     # include approved/rejected history
+uv run relay approvals show apr-5876b41c9454          # one draft in full
+make approve ID=apr-5876b41c9454 BY=drishti           # approve -> out/outbox.jsonl (exactly once)
+make reject  ID=apr-2c151835bfae REASON="why it is wrong" BY=drishti
+#   first rejection -> one redraft appears as attempt 2 (run `make approve` to see it)
+#   second rejection -> ticket escalated, case opened, nothing sent
+make cases                                            # escalation + dead-letter cases
+make export                                           # re-write out/*.jsonl from the database
+# Approval ids are stable per ticket thread, e.g. NW-T01 = apr-5876b41c9454,
+# HD-T09 = apr-b03b4df41e7e, NW-T02 = apr-2c151835bfae (after a fresh `make demo`).
+
+
+3. ANY INBOX (assessment C7)
+----------------------------
+make run INBOX=data/northwind/tickets.jsonl
+make run INBOX=data/harbor/tickets.jsonl
+make run INBOX=/path/to/unseen_tickets.jsonl          # same format, no code changes
+# Re-running the same inbox creates no duplicate decisions ("already decided (skipped)").
+
+
+4. EVALUATION (assessment E3)
+-----------------------------
+make eval RUNS=5                                      # ~10 min; writes eval/runs/run_N.jsonl,
+                                                      # eval/runs/summary.json, docs/EVAL.md
+uv run relay eval --runs 3 --no-draft                 # faster: triage + routing only
+
+
+5. TESTS (assessment E4) - needs Postgres, not Ollama
+-----------------------------------------------------
+make test                                             # 118 tests, ~5 s
+uv run --group dev pytest -o addopts="" -q tests/test_checkpoint_isolation.py   # one file
+uv run --group dev pytest -o addopts="" -q -k approval                         # by name
+
+
+6. WEB CONSOLE + API
+--------------------
+make dev                                              # API :8077 + console :5173, Ctrl-C stops both
+open http://localhost:5173
+# or separately:
+make api                                              # FastAPI on :8077  (docs: http://localhost:8077/docs)
+make frontend                                         # Vite dev server on :5173
+curl -H "Authorization: Bearer dev-operator-token" localhost:8077/api/metrics
+
+
+7. OPERATIONS
+-------------
+make health                                           # Postgres, pgvector, Ollama, models, queue, checkpoint RLS
+make report                                           # internal view: runs, models, tokens, latency, cases
+make report VIEW=client TENANT=harbor                 # client view: outcomes only
+make worker                                           # long-running worker (reclaims leases, reconciles approvals)
+make migrate                                          # apply migrations (idempotent)
+make seed                                             # re-embed changed KB articles only
+
+
+8. DEMONSTRATIONS FOR THE WALKTHROUGH
+-------------------------------------
+# a) Crash recovery: kill the run mid-way, then re-run; no duplicates.
+make run INBOX=data/northwind/tickets.jsonl &  sleep 8;  pkill -9 -f "relay run"
+make run INBOX=data/northwind/tickets.jsonl          # "N unfinished from an earlier run (resumed)"
+
+# b) Provider failures: 30% of model calls fail at random; jobs retry with backoff.
+CHAOS_FAIL_RATE=0.3 make run INBOX=data/harbor/tickets.jsonl
+
+# c) Budget stop: tiny per-ticket budget -> tickets become held_budget, run does not crash.
+RELAY_MAX_TOKENS_PER_TICKET=300 make run INBOX=some_new_tickets.jsonl
+
+# d) Tenant isolation at the database, as the non-superuser app role:
+docker exec -i -e PGPASSWORD=relay_app relay-pg psql -h 127.0.0.1 -U relay_app -d relay -c "select count(*) from tickets"
+#   -> 0 (no tenant bound: fails closed)
+docker exec -i -e PGPASSWORD=relay_app relay-pg psql -h 127.0.0.1 -U relay_app -d relay \
+  -c "begin; select set_config('app.tenant_id','harbor',true); select count(*) from tickets where tenant_id='northwind'; select count(*) from checkpoints where thread_id like 'northwind:%'; commit;"
+#   -> 0 and 0
+
+# e) Unknown tenant is rejected, never processed:
+echo '{"id":"X-1","tenant":"acme","customer_ref":"c","subject":"s","body":"b","received_at":"2026-10-28T10:00:00+05:30"}' > /tmp/acme.jsonl
+make run INBOX=/tmp/acme.jsonl                        # "REJECTED ... unknown tenant 'acme'"
+
+
+9. REDO THE APPROVALS YOURSELF (so out/outbox.jsonl shows a human approver)
+---------------------------------------------------------------------------
+make clean                                            # deletes the local database volume
+make demo
+uv run relay approvals show apr-5876b41c9454          # READ the draft against data/northwind/kb.jsonl
+make approve ID=apr-5876b41c9454 BY=drishti           # only if it is correct
+uv run relay approvals show apr-b03b4df41e7e
+make approve ID=apr-b03b4df41e7e BY=drishti
+uv run relay approvals show apr-2c151835bfae
+make reject ID=apr-2c151835bfae REASON="your reason" BY=drishti
+git add out && git commit -m "Re-run demo; approvals made by the candidate"
+git tag -f -a submission -m "Submission"
+
+
+10. CLEANUP
+-----------
+make down                                             # stop Postgres, keep data
+make clean                                            # stop Postgres and DELETE its data

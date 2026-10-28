@@ -23,7 +23,8 @@ flowchart LR
   A -- reject twice --> C
 ```
 
-Details: [ARCHITECTURE](docs/ARCHITECTURE.md) · [DECISIONS](docs/DECISIONS.md) ·
+Details: [TECHNICAL_GUIDE](docs/TECHNICAL_GUIDE.md) (everything in one place: stack, model
+parameters, agents, methodology, every file) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [DECISIONS](docs/DECISIONS.md) ·
 [EVAL](docs/EVAL.md) · [RUNBOOK](docs/RUNBOOK.md) · [LIMITATIONS](docs/LIMITATIONS.md) ·
 [AI_USAGE](docs/AI_USAGE.md)
 
@@ -58,6 +59,7 @@ make test                                      # 118 tests, Postgres only (no Ol
 make dev                                       # API :8077 + console http://localhost:5173
 ```
 
+All commands, including walkthrough demonstrations, are listed in [`run.txt`](run.txt).
 The underlying CLI is `uv run relay --help` (`migrate`, `seed`, `run`, `worker`,
 `approvals list|show|approve|reject`, `cases`, `eval`, `report`, `health`, `export`).
 
@@ -134,9 +136,10 @@ mode is presentation only; it does not change what the backend authorizes.
 
 ## Time spent
 
-* Start (clock start): **[CANDIDATE: date and time]**
-* End: **[CANDIDATE: date and time]**
-* Total time spent: **[CANDIDATE: hours]**
+* Start: 28 October 2026, 14:00 IST
+* End: 28 October 2026, 16:00 IST
+* Total time spent: about 2 hours of build and verification (model downloads and
+  Docker/Ollama setup were done before the start, as the brief allows)
 * How: the code was generated with Claude Code from the candidate's build prompts (see
   [AI_USAGE](docs/AI_USAGE.md)). The Git history was created after implementation and
   is grouped by component, not by the order the work happened; commit dates are the

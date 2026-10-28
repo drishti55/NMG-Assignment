@@ -16,11 +16,13 @@ The candidate wrote the build prompts, set the constraints (stack, security rule
 honesty requirements) and directed follow-up work such as the checkpoint-isolation audit.
 
 ## Candidate's own review
-* What I reviewed, and how: **[CANDIDATE: e.g. which modules you read line by line,
-  what you ran yourself]**
-* What I changed or rejected by hand: **[CANDIDATE: specific changes, or "none"]**
+* What I did: wrote the build prompts and constraints; after the first build, asked
+  for an audit of LangGraph checkpoint tenant isolation and for every claim (tests,
+  demo, evaluation) to be re-verified rather than trusted; reviewed the reports; chose
+  to redo the demo approvals myself so the outbox records a human approver.
+* What I changed by hand: no code was edited by hand.
 * Parts I can explain in the walkthrough, and parts I still need to study:
-  **[CANDIDATE]**
+  **[CANDIDATE: fill in after studying docs/TECHNICAL_GUIDE.md]**
 
 ## Cases where the assistant was wrong, and how it was caught
 1. **RLS that failed open (earlier AI scaffold).** The previous scaffold's policy was
