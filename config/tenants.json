@@ -1,0 +1,4 @@
+[
+  {"tenant_id": "northwind", "name": "Northwind Cycles", "kb_prefix": "NW-KB-", "aliases": ["Northwind Cycles", "Northwind"], "clinical_restricted": false},
+  {"tenant_id": "harbor", "name": "Harbor Dental", "kb_prefix": "HD-KB-", "aliases": ["Harbor Dental", "Harbor"], "clinical_restricted": true}
+]
