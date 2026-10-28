@@ -6,7 +6,6 @@
 
 - **Ollama models:** The application uses `qwen2.5:1.5b` for triage, `qwen2.5:3b` for drafting, and `nomic-embed-text` for embeddings. These are runtime models used by Project Relay, not coding assistants.
 
-- **Earlier scaffold:** An earlier version of the project was moved out of the repository and replaced. None of its code is used in the current implementation.
 
 ## How Much Was AI-Generated?
 
