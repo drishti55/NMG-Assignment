@@ -25,16 +25,17 @@ def content_hash(ticket: Ticket) -> str:
 
 # ------------------------------------------------------------------ tickets / runs
 
-def upsert_ticket(ticket: Ticket) -> None:
+def upsert_ticket(ticket: Ticket, source: str | None = None) -> bool:
+    """Store a received ticket once (the first source wins). Returns True if new."""
     with tenant_tx(ticket.tenant) as conn:
-        conn.execute(
+        return conn.execute(
             """INSERT INTO tickets (tenant_id, ticket_id, customer_ref, subject, body,
-                   received_at, content_hash)
-               VALUES (%s,%s,%s,%s,%s,%s,%s)
-               ON CONFLICT (tenant_id, ticket_id) DO NOTHING""",
+                   received_at, content_hash, source)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (tenant_id, ticket_id) DO NOTHING RETURNING ticket_id""",
             (ticket.tenant, ticket.id, ticket.customer_ref, ticket.subject, ticket.body,
-             ticket.received_at, content_hash(ticket)),
-        )
+             ticket.received_at, content_hash(ticket), source),
+        ).fetchone() is not None
 
 
 def load_ticket(tenant_id: str, ticket_id: str) -> Ticket | None:

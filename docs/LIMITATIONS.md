@@ -11,9 +11,10 @@
   model names and the Postgres version. Do not expose the API beyond localhost.
 * **CLI approver identity is self-declared** (`--by name`). The audit trail records
   it, but nothing verifies it.
-* **The web console was checked by a production build, a TypeScript check, API calls
-  through the proxy, and headless-Chrome screenshots of the main pages**, not by
-  automated browser tests.
+* **The web console** is covered by 35 component/logic tests (Vitest + jsdom with a
+  recording network mock) and was verified end to end by a scripted headless-Chrome run
+  against a real backend (import, process, approve, mode switches, reloads, mobile width).
+  That browser script is not part of the repository's automated suite.
 
 ## Fragile
 * **Model quality.** On the golden set, action accuracy is 79% and priority accuracy

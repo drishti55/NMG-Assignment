@@ -322,6 +322,7 @@ code), `northwind/tickets.jsonl`, `harbor/tickets.jsonl` (12 tickets each),
 | `env.py` | Runs migrations as the admin (schema owner) role |
 | `versions/0001_initial.py` | All tables, the `relay_app` role, grants (append-only tables), RLS on the 10 tenant tables |
 | `versions/0002_checkpoint_rls.py` | Tenant column + RLS on LangGraph's checkpoint tables; tenant id format check; read-only schema-version table |
+| `versions/0003_ticket_source.py` | Records where each ticket came from (inbox file or console) |
 
 ### `relay/` (the Python package)
 | File | Contains |
@@ -348,8 +349,9 @@ code), `northwind/tickets.jsonl`, `harbor/tickets.jsonl` (12 tickets each),
 | `cli.py` / `__main__.py` | The `relay` command |
 | `health.py` | Health checks (Postgres, pgvector, Ollama, models, workers, queue, checkpoint RLS, SSE) |
 | `report.py` | Internal and client report views |
+| `ticket_view.py` | One ticket's state (not processed, processing, waiting for approval, sent, escalated, held, failed) and the actions allowed in it |
 
-### `tests/` (118 tests; Postgres required, Ollama not)
+### `tests/` (135 tests; Postgres required, Ollama not)
 | File | Tests | Covers |
 |---|---|---|
 | `conftest.py` | - | Creates and migrates a separate `relay_test` database; outputs go to a temp dir |
@@ -360,27 +362,32 @@ code), `northwind/tickets.jsonl`, `harbor/tickets.jsonl` (12 tickets each),
 | `test_policy.py` | 38 | 26-case injection suite, obfuscation, every lead rule |
 | `test_workflow.py` | 27 | Routing, approval state machine, exactly-once outbox, budgets, repair, retries, leases, dead letters, re-runs, output schema |
 | `test_api.py` | 7 | Auth, tenant grants, idempotent approval via API, graph endpoint |
+| `test_console_api.py` | 17 | Ticket state derivation, import never processes, reading pages creates no work, stable order, explicit processing exactly once (also under concurrent clicks), tenant grant |
 | `fixtures/injection_cases.jsonl` | - | 14 attacks + 12 benign look-alikes |
 
 ### `frontend/` (React console)
 | File | Contains |
 |---|---|
-| `vite.config.ts` | Dev server and proxy that injects the operator token server-side |
-| `src/main.tsx` | App shell, navigation, Developer mode switch, routes |
-| `src/lib/api.ts` | Fetch wrapper, polling hook, SSE hook (EventSource with Last-Event-ID), formatters |
-| `src/lib/devmode.tsx` | Developer mode preference (presentation only) |
-| `src/lib/thread.ts` | Replays then follows one thread's events |
-| `src/components/ui.tsx` | Cards, stat tiles, status badges (icon + label), bars, tables, checker rule list |
-| `src/components/GraphView.tsx` | The LangGraph diagram, coloured only by real events |
-| `src/components/EventFeed.tsx` | Live event list |
-| `src/pages/Dashboard.tsx` | Operations metrics, outcomes, model usage, live events |
-| `src/pages/Monitor.tsx` | Live agent monitor |
-| `src/pages/Inspector.tsx` | Run inspector (ops view / Developer mode telemetry) |
-| `src/pages/Tickets.tsx` | Ticket explorer with filters and detail panel |
-| `src/pages/Approvals.tsx` | Approval center: draft, citations, checker, approve / reject |
-| `src/pages/Escalations.tsx` | Cases with reason, owner, audit, next step |
-| `src/pages/Evaluation.tsx` | Evaluation results and raw run files |
-| `src/pages/Health.tsx` | System health checks |
+| `vite.config.ts` | Dev server, the proxy that injects the operator token server-side, and the Vitest setup |
+| `src/main.tsx` / `src/App.tsx` | Entry point; app shell with the header mode switch, Developer Mode banner, grouped navigation (Overview, Work queue, System) and routes |
+| `src/lib/mode.tsx` | User Mode / Developer Mode preference (default User; presentation only, stored in the browser) |
+| `src/lib/status.ts` | Plain-language meaning of every state, action, reason code, category, priority and technical term |
+| `src/lib/progress.ts` | Simple-view progress stages derived only from recorded execution events |
+| `src/lib/api.ts` | Fetch wrapper (stale requests aborted), error explanations, polling hook, SSE hook |
+| `src/lib/thread.ts` | Replays then follows one thread's events, de-duplicated by event id |
+| `src/components/ui.tsx` | Page header, cards, state badges (icon + label), help tooltips, confirmation dialog, Developer Mode panels |
+| `src/components/Execution.tsx` | Progress tracker (User Mode), node timeline and model-call table (Developer Mode) |
+| `src/components/GraphView.tsx` | The compiled LangGraph diagram, coloured only by real events |
+| `src/pages/Dashboard.tsx` | What needs attention, ticket counts by state (each links to its list), how Relay works; Dev: gateway meter, live event stream |
+| `src/pages/Tickets.tsx` | Inbox import (no processing), status filters, stable newest-first list |
+| `src/pages/TicketDetail.tsx` | One ticket: request, decision and reason, draft, progress, and only the backend-allowed actions with confirmations |
+| `src/pages/Approvals.tsx` | Pending approvals: explicit selection, approve / reject with reason |
+| `src/pages/Escalations.tsx` | Cases with plain-language reason, owner, next step and history |
+| `src/pages/Runs.tsx` | Run history: every processing run with progress; Dev: lease, model calls, timeline |
+| `src/pages/Monitor.tsx` | Agent monitor: chosen run (follow-new-runs is opt-in); Dev: compiled graph + timeline |
+| `src/pages/Evaluation.tsx` | Evaluation results in plain language; Dev: configuration, raw run files |
+| `src/pages/Health.tsx` | Health checks with what each dependency is for |
+| `src/test/*.test.ts(x)` | 35 Vitest tests: mode switching, no processing without a confirmed click, exact-ticket processing, backend-allowed actions, stable list order, no auto-selection, progress derivation, plain-language catalog, a scan for randomness |
 
 ### Outputs (committed, generated by code)
 `out/decisions.jsonl` (24 rows), `out/outbox.jsonl` (approved messages),

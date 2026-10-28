@@ -1,160 +1,172 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Card, CheckRules, Empty, ErrorBox, Json, KV, Loading, PageHeader, Pill, StatusBadge } from "../components/ui";
-import { fmt, useApi, type RelayEvent } from "../lib/api";
-import { useDevMode } from "../lib/devmode";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Card, ConfirmDialog, Empty, ErrorBox, Loading, Notice, PageHeader, StateBadge } from "../components/ui";
+import { explainError, fmt, post, useApi } from "../lib/api";
+import { useMode } from "../lib/mode";
+import { PRIORITY, STATE, TENANT, sourceLabel } from "../lib/status";
 
-interface Row {
-  tenant_id: string; ticket_id: string; customer_ref: string; subject: string; received_at: string;
-  category: string | null; priority: string | null; action: string | null; status: string | null;
+export interface TicketRow {
+  tenant_id: string; ticket_id: string; customer_ref: string; subject: string; received_at: string; source: string | null;
+  category: string | null; priority: string | null; action: string | null; decision_status: string | null;
   injection_detected: boolean | null; latency_ms: number | null; tokens_in: number | null; tokens_out: number | null;
-  approval_status: string | null; sent: boolean;
+  reason_code: string | null; state: string; allowed_actions: string[];
 }
+interface Summary { total: number; by_state: Record<string, number> }
 
-const CATEGORIES = ["returns_refunds", "shipping_delivery", "warranty_repair", "order_change", "billing_payments",
-  "assembly_setup", "appointments", "records_privacy", "clinical", "other"];
+const STATE_ORDER = ["waiting_approval", "escalated", "not_processed", "processing", "sent", "held_budget", "failed"];
 
 export default function Tickets() {
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { isDev } = useMode();
+  const state = params.get("state") ?? "";
+  const tenant = params.get("tenant") ?? "";
+  const q = params.get("q") ?? "";
+  const [search, setSearch] = useState(q);
+  const qs = new URLSearchParams(Object.entries({ state, tenant, q }).filter(([, v]) => v)).toString();
+  const rows = useApi<TicketRow[]>(`/api/tickets${qs ? `?${qs}` : ""}`, 10000);
+  const summary = useApi<Summary>(`/api/tickets/summary${tenant ? `?tenant=${tenant}` : ""}`, 10000);
   const tenants = useApi<{ tenant_id: string; name: string }[]>("/api/tenants");
-  const [f, setF] = useState({ tenant: "", q: "", category: "", priority: "", action: "", status: "" });
-  const [sel, setSel] = useState<Row | null>(null);
-  const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
-  const rows = useApi<Row[]>(`/api/tickets${qs ? `?${qs}` : ""}`, 8000);
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+
+  const setFilter = (k: string, v: string) => {
+    const next = new URLSearchParams(params);
+    if (v) next.set(k, v); else next.delete(k);
+    setParams(next, { replace: true });
+  };
 
   return (
     <>
-      <PageHeader title="Ticket explorer" subtitle="Every ticket the queue has accepted, with its decision. Filters run server-side inside each tenant's RLS scope." />
-      <div className="mb-4 flex flex-wrap gap-2">
-        <input className="input w-56" placeholder="Search id, subject, body" value={f.q} onChange={set("q")} />
-        <select className="input" value={f.tenant} onChange={set("tenant")}>
-          <option value="">All my tenants</option>
+      <PageHeader
+        title="Tickets"
+        purpose="Every customer ticket the system has received, newest first. Each one shows where it stands: not processed yet, waiting for your approval, handed to a person, or answered."
+        next="Click a ticket to open it. Processing only starts when you choose “Process this ticket” on its page."
+      />
+
+      <ImportPanel onImported={() => { rows.reload(); summary.reload(); }} empty={summary.data?.total === 0} />
+
+      <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+        <Chip active={!state} onClick={() => setFilter("state", "")} label="All" count={summary.data?.total} />
+        {STATE_ORDER.map((s) => (
+          <Chip key={s} active={state === s} onClick={() => setFilter("state", s)} label={STATE[s].label} count={summary.data?.by_state[s]} />
+        ))}
+      </div>
+      <form className="mb-4 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); setFilter("q", search.trim()); }}>
+        <label className="sr-only" htmlFor="ticket-search">Search tickets</label>
+        <input id="ticket-search" className="input w-72" placeholder="Search by ticket ID, subject or message" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <button className="btn-ghost" type="submit">Search</button>
+        <label className="sr-only" htmlFor="tenant-filter">Company</label>
+        <select id="tenant-filter" className="input" value={tenant} onChange={(e) => setFilter("tenant", e.target.value)}>
+          <option value="">All companies</option>
           {tenants.data?.map((t) => <option key={t.tenant_id} value={t.tenant_id}>{t.name}</option>)}
         </select>
-        <select className="input" value={f.category} onChange={set("category")}>
-          <option value="">Any category</option>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{fmt.label(c)}</option>)}
-        </select>
-        <select className="input" value={f.priority} onChange={set("priority")}>
-          <option value="">Any priority</option>
-          {["urgent", "high", "normal", "low"].map((p) => <option key={p}>{p}</option>)}
-        </select>
-        <select className="input" value={f.action} onChange={set("action")}>
-          <option value="">Any action</option>
-          {["draft_reply", "ask_for_info", "escalate"].map((a) => <option key={a} value={a}>{fmt.label(a)}</option>)}
-        </select>
-        <select className="input" value={f.status} onChange={set("status")}>
-          <option value="">Any status</option>
-          {["pending_approval", "escalated", "held_budget", "failed"].map((s) => <option key={s} value={s}>{fmt.label(s)}</option>)}
-        </select>
-      </div>
+        {(state || tenant || q) && <button type="button" className="btn-ghost" onClick={() => { setSearch(""); setParams({}, { replace: true }); }}>Clear filters</button>}
+      </form>
+
       {rows.error && <ErrorBox error={rows.error} onRetry={rows.reload} />}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,520px)]">
-        <Card>
-          {!rows.data ? <Loading rows={8} /> : !rows.data.length ? <Empty title="No tickets match" /> : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-fg-faint">
-                  <tr>{["Ticket", "Subject", "Category", "Pri.", "Action", "Status", "Latency"].map((h) => <th key={h} className="pb-2 pr-3 font-medium">{h}</th>)}</tr>
-                </thead>
-                <tbody className="divide-y divide-ink-800">
-                  {rows.data.map((r) => (
-                    <tr key={r.tenant_id + r.ticket_id} onClick={() => setSel(r)}
-                      className={`cursor-pointer hover:bg-ink-850 ${sel?.ticket_id === r.ticket_id && sel.tenant_id === r.tenant_id ? "bg-ink-850" : ""}`}>
-                      <td className="py-1.5 pr-3"><span className="mono">{r.ticket_id}</span><div className="text-[11px] text-fg-faint">{r.tenant_id}</div></td>
-                      <td className="max-w-[16rem] truncate pr-3">{r.subject}{r.injection_detected && <span className="ml-2"><Pill tone="critical">injection</Pill></span>}</td>
-                      <td className="pr-3 text-fg-muted">{fmt.label(r.category)}</td>
-                      <td className="pr-3 text-fg-muted">{r.priority ?? "—"}</td>
-                      <td className="pr-3">{fmt.label(r.action)}</td>
-                      <td className="pr-3"><StatusBadge status={r.sent ? "sent" : r.approval_status === "pending" ? "pending_approval" : r.status} /></td>
-                      <td className="mono text-fg-faint">{fmt.ms(r.latency_ms)}</td>
+      <Card>
+        {rows.loading && !rows.data ? <Loading label="Loading tickets" /> : !rows.data?.length ? (
+          summary.data?.total === 0 ? (
+            <Empty title="No tickets yet">Import an inbox above, or run <code className="mono">make demo</code>, to load the assessment's tickets. Importing does not process them.</Empty>
+          ) : <Empty title="No tickets match these filters" action={<button className="btn-ghost" onClick={() => setParams({}, { replace: true })}>Show all tickets</button>} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <caption className="sr-only">Tickets, newest first</caption>
+              <thead className="text-left text-fg-faint">
+                <tr>
+                  <th className="pb-2 pr-4 font-medium">Ticket</th>
+                  <th className="pb-2 pr-4 font-medium">Subject</th>
+                  <th className="pb-2 pr-4 font-medium">Company</th>
+                  <th className="pb-2 pr-4 font-medium">Priority</th>
+                  <th className="pb-2 pr-4 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Received</th>
+                  {isDev && <th className="pb-2 pl-4 font-mono text-xs font-medium text-[#8fbcf2]">category / reason / tokens</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-800">
+                {rows.data.map((r) => {
+                  const href = `/tickets/${r.tenant_id}/${encodeURIComponent(r.ticket_id)}`;
+                  return (
+                    <tr key={`${r.tenant_id}/${r.ticket_id}`} className="cursor-pointer hover:bg-ink-850" onClick={() => navigate(href)}>
+                      <td className="py-2.5 pr-4"><Link to={href} className="font-mono hover:text-accent" onClick={(e) => e.stopPropagation()}>{r.ticket_id}</Link></td>
+                      <td className="max-w-[22rem] pr-4">
+                        <span className="block truncate">{r.subject}</span>
+                        {r.injection_detected && <span className="text-xs text-[#ef6b6b]">▲ Possible manipulation attempt</span>}
+                      </td>
+                      <td className="whitespace-nowrap pr-4 text-fg-muted">{TENANT[r.tenant_id] ?? r.tenant_id}</td>
+                      <td className="pr-4 text-fg-muted">{r.priority ? PRIORITY[r.priority]?.label : "—"}</td>
+                      <td className="pr-4"><StateBadge state={r.state} /></td>
+                      <td className="whitespace-nowrap text-fg-faint" title={sourceLabel(r.source)}>{fmt.datetime(r.received_at)}</td>
+                      {isDev && (
+                        <td className="whitespace-nowrap pl-4 font-mono text-xs text-fg-muted">
+                          {r.category ?? "-"} / {r.reason_code ?? "-"} / {r.tokens_in ?? "-"}→{r.tokens_out ?? "-"}
+                        </td>
+                      )}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-        {sel ? <TicketPanel tenant={sel.tenant_id} id={sel.ticket_id} /> : (
-          <Card><Empty title="Select a ticket">Details, retrieved KB references, draft, checker results and run history appear here.</Empty></Card>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </Card>
     </>
   );
 }
 
-interface Detail {
-  ticket: { body: string; subject: string; customer_ref: string; received_at: string };
-  decision: { action: string; status: string; category: string; priority: string; draft_reply: string | null; kb_refs: string[]; model: string; tokens_in: number; tokens_out: number; latency_ms: number; reason_code: string | null; run_id: string } | null;
-  approvals: { approval_id: string; attempt: number; status: string; decided_by: string | null; decided_at: string | null; reason: string | null; draft_text: string; check_result: { rules: { rule_id: string; passed: boolean; message: string }[] } }[];
-  outbox: { approved_by: string; approved_at: string } | null;
-  cases: { case_id: string; owner: string; severity: string; reason_code: string; reason: string }[];
-  threads: { thread_id: string; status: string; started_at: string }[];
-  model_calls: { task: string; model: string; tokens_in: number | null; tokens_out: number | null; latency_ms: number; ok: boolean }[];
-  audit: { actor: string; action: string; from_state: string | null; to_state: string | null; reason: string | null; at: string }[];
-  events: RelayEvent[];
+function Chip({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) {
+  return (
+    <button type="button" aria-pressed={active} onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-sm ${active ? "border-accent bg-accent-soft text-accent" : "border-ink-600 text-fg-muted hover:text-fg"}`}>
+      {label} <span className="tabular-nums opacity-80">{count ?? "…"}</span>
+    </button>
+  );
 }
 
-function TicketPanel({ tenant, id }: { tenant: string; id: string }) {
-  const d = useApi<Detail>(`/api/tickets/${tenant}/${encodeURIComponent(id)}`, 6000);
-  const { on: dev } = useDevMode();
-  if (d.error) return <ErrorBox error={d.error} onRetry={d.reload} />;
-  if (!d.data) return <Card><Loading rows={6} /></Card>;
-  const { ticket, decision, approvals, outbox, cases, threads, model_calls, audit, events } = d.data;
-  const retrieval = [...events].reverse().find((e) => e.node === "retrieve_knowledge" && e.event_type === "node_completed");
-  const passages = (retrieval?.metadata.passages ?? []) as { kb_id: string; score: number }[];
-  const lastApproval = approvals.at(-1);
+interface InboxFile { file: string; tickets: number; already_imported: number; rejected_lines: number }
+
+/** Loads tickets from the assessment's inbox files without processing them. */
+function ImportPanel({ onImported, empty }: { onImported: () => void; empty: boolean }) {
+  const files = useApi<InboxFile[]>("/api/inbox");
+  const [open, setOpen] = useState<InboxFile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: "good" | "critical"; text: string } | null>(null);
+  const importable = files.data?.filter((f) => f.already_imported < f.tickets) ?? [];
+  if (!empty && importable.length === 0 && !msg) return null;
+
+  async function doImport(f: InboxFile) {
+    setBusy(true);
+    try {
+      const r = await post<{ imported: string[]; already_present: string[]; rejected: unknown[] }>("/api/inbox/import", { file: f.file });
+      setMsg({ tone: "good", text: `Imported ${r.imported.length} new ticket(s)${r.already_present.length ? `; ${r.already_present.length} were already here` : ""}. They are marked “Not processed yet”.` });
+      files.reload();
+      onImported();
+    } catch (e) {
+      setMsg({ tone: "critical", text: explainError(e) });
+    } finally {
+      setBusy(false);
+      setOpen(null);
+    }
+  }
+
   return (
-    <div className="space-y-4">
-      <Card title={`${id} · ${tenant}`} right={<StatusBadge status={outbox ? "sent" : decision?.status} />}>
-        <div className="text-sm font-medium">{ticket.subject}</div>
-        <p className="mt-1 whitespace-pre-wrap text-sm text-fg-muted">{ticket.body}</p>
-        <div className="mt-3">
-          <KV rows={[
-            ["Customer", ticket.customer_ref],
-            ["Received", fmt.datetime(ticket.received_at)],
-            ...(decision ? ([
-              ["Decision", `${fmt.label(decision.action)} · ${fmt.label(decision.category)} · ${decision.priority}`],
-              ["Reason", <span key="r" className="mono">{decision.reason_code ?? "—"}</span>],
-              ["Usage", `${decision.model} · ${fmt.int(decision.tokens_in)} in / ${fmt.int(decision.tokens_out)} out · ${fmt.ms(decision.latency_ms)}`],
-            ] as [string, React.ReactNode][]) : []),
-            ["Outbox", outbox ? `sent, approved by ${outbox.approved_by} at ${fmt.datetime(outbox.approved_at)}` : "not sent"],
-          ]} />
+    <Card title="Load tickets from an inbox file" className="mb-5"
+      help="Importing only stores the tickets so you can see them. It does not run the AI on them.">
+      {msg && <div className="mb-3"><Notice tone={msg.tone}>{msg.text}</Notice></div>}
+      {files.error ? <ErrorBox error={files.error} /> : !files.data ? <Loading /> : (
+        <div className="flex flex-wrap gap-2">
+          {files.data.map((f) => (
+            <button key={f.file} className="btn-ghost" disabled={f.already_imported >= f.tickets} onClick={() => setOpen(f)}>
+              Import {f.file} ({f.already_imported >= f.tickets ? "already imported" : `${f.tickets - f.already_imported} new`})
+            </button>
+          ))}
         </div>
-      </Card>
-      <Card title="Retrieved KB references">
-        {passages.length ? (
-          <div className="flex flex-wrap gap-1.5">{passages.map((p) => <Pill key={p.kb_id} tone={decision?.kb_refs.includes(p.kb_id) ? "accent" : "neutral"}>{p.kb_id} · {p.score.toFixed(3)}{decision?.kb_refs.includes(p.kb_id) ? " · cited" : ""}</Pill>)}</div>
-        ) : <p className="text-sm text-fg-faint">No retrieval for this ticket (escalated before retrieval, or not yet processed).</p>}
-      </Card>
-      <Card title="Draft">
-        {decision?.draft_reply ? <p className="whitespace-pre-wrap text-sm leading-relaxed">{decision.draft_reply}</p>
-          : <p className="text-sm text-fg-faint">No customer draft.</p>}
-        {lastApproval && <div className="mt-3"><div className="label mb-1">Checker (attempt {lastApproval.attempt})</div><CheckRules rules={lastApproval.check_result.rules} /></div>}
-        {lastApproval?.status === "pending" && <Link to="/approvals" className="mt-3 inline-block text-sm text-accent hover:underline">Review in Approval Center →</Link>}
-      </Card>
-      {cases.length > 0 && (
-        <Card title="Cases">
-          {cases.map((c) => <div key={c.case_id} className="text-sm"><span className="mono">{c.case_id}</span> · {c.severity} · {c.owner}<div className="text-fg-muted">{c.reason}</div></div>)}
-        </Card>
       )}
-      <Card title="Run history">
-        <ul className="space-y-1 text-sm">
-          {threads.map((t) => (
-            <li key={t.thread_id} className="flex items-center justify-between gap-2">
-              <Link className="mono hover:text-accent" to={`/inspector?thread=${encodeURIComponent(t.thread_id)}`}>{t.thread_id}</Link>
-              <StatusBadge status={t.status} />
-            </li>
-          ))}
-        </ul>
-        <div className="label mb-1 mt-3">Audit trail</div>
-        <ol className="space-y-1 text-sm">
-          {audit.map((a, i) => (
-            <li key={i} className="text-fg-muted"><span className="mono text-fg-faint">{fmt.time(a.at)}</span> <span className="text-fg">{a.actor}</span> {fmt.label(a.action)}{a.to_state ? ` → ${a.to_state}` : ""}{a.reason ? ` · “${a.reason}”` : ""}</li>
-          ))}
-        </ol>
-        {dev && <div className="mt-3"><div className="label mb-1">Model calls</div><Json value={model_calls} /></div>}
-      </Card>
-    </div>
+      <ConfirmDialog open={!!open} title="Import these tickets?" confirmLabel="Import tickets" busy={busy}
+        onConfirm={() => open && doImport(open)} onCancel={() => setOpen(null)}>
+        <p>This adds the tickets in <span className="font-mono text-fg">{open?.file}</span> to the list as “Not processed yet”.</p>
+        <p>No AI processing happens. You choose which tickets to process afterwards. Tickets already present are left unchanged.</p>
+      </ConfirmDialog>
+    </Card>
   );
 }

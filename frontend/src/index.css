@@ -3,12 +3,20 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }
-body { background: #0c0e0d; }
+body { background: #0c0e0d; font-size: 15px; }
+/* Developer Mode gives the whole canvas a faint technical grid, so the switch is unmistakable. */
+html[data-mode="developer"] main {
+  background-image: linear-gradient(rgba(57, 135, 229, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 135, 229, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+:focus-visible { outline: 2px solid #3ecf7a; outline-offset: 2px; border-radius: 4px; }
+
 .card { @apply rounded-lg border border-ink-700 bg-ink-900; }
-.label { @apply text-[11px] font-medium uppercase tracking-wider text-fg-faint; }
-.btn { @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50; }
+.label { @apply text-xs font-medium uppercase tracking-wider text-fg-faint; }
+.btn { @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50; }
 .btn-primary { @apply btn bg-accent-strong text-ink-950 hover:bg-accent; }
-.btn-ghost { @apply btn border border-ink-600 text-fg-muted hover:border-fg-faint hover:text-fg; }
-.btn-danger { @apply btn border border-status-critical/60 text-[#f08a8a] hover:bg-status-critical/10; }
-.input { @apply rounded-md border border-ink-600 bg-ink-850 px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none; }
+.btn-ghost { @apply btn border border-ink-600 text-fg hover:border-fg-faint hover:bg-ink-850; }
+.btn-danger { @apply btn border border-status-critical/60 text-[#f3a0a0] hover:bg-status-critical/15; }
+.input { @apply rounded-md border border-ink-600 bg-ink-850 px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none; }
 .mono { @apply font-mono text-[12px]; }

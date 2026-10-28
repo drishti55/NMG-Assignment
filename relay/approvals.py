@@ -53,10 +53,11 @@ def list_approvals(tenants: frozenset[str] | None = None, status: str | None = "
                    LEFT JOIN decisions d ON d.ticket_id = a.ticket_id
                    LEFT JOIN outbox o ON o.ticket_id = a.ticket_id AND o.approval_id = a.approval_id
                    WHERE (%(s)s::text IS NULL OR a.status = %(s)s::text)
-                   ORDER BY a.created_at""",
+                   ORDER BY a.created_at, a.approval_id""",
                 {"s": status},
             ).fetchall()
-    return rows
+    # One global, stable order across tenants: oldest request first.
+    return sorted(rows, key=lambda r: (r["created_at"], r["approval_id"]))
 
 
 def _decide(orch: Orchestrator, approval_id: str, actor: str, decision: str,

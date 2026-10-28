@@ -167,32 +167,60 @@ def metrics(tenant: str | None = None, op: Operator = Depends(operator)) -> dict
 
 # ------------------------------------------------------------------ tickets
 
-@app.get("/api/tickets")
-def list_tickets(tenant: str | None = None, q: str | None = None, category: str | None = None,
-                 priority: str | None = None, action: str | None = None, status: str | None = None,
-                 op: Operator = Depends(operator)) -> list[dict]:
+def _ticket_rows(tenants: list[str], q: str | None = None) -> list[dict]:
+    """Every accepted ticket of the given tenants with its derived state, in one stable
+    order: newest received first, then tenant, then ticket id (no ties, no shuffling)."""
+    from relay.queue import ticket_states
+    from relay.ticket_view import allowed_actions, ticket_state
+
     out = []
-    for t in _tenants(op, tenant):
+    for t in tenants:
+        jobs = ticket_states(t)
         with tenant_tx(t) as conn:
             rows = conn.execute(
                 """SELECT t.tenant_id, t.ticket_id, t.customer_ref, t.subject, t.received_at,
-                          d.category, d.priority, d.action, d.status, d.injection_detected,
-                          d.latency_ms, d.tokens_in, d.tokens_out, d.reason_code, d.updated_at,
+                          t.source, d.category, d.priority, d.action, d.status AS decision_status,
+                          d.injection_detected, d.latency_ms, d.tokens_in, d.tokens_out,
+                          d.reason_code, d.updated_at,
                           (SELECT status FROM approvals a WHERE a.ticket_id = t.ticket_id
                            ORDER BY attempt DESC LIMIT 1) AS approval_status,
                           EXISTS (SELECT 1 FROM outbox o WHERE o.ticket_id = t.ticket_id) AS sent
                    FROM tickets t LEFT JOIN decisions d USING (tenant_id, ticket_id)
-                   WHERE (%(q)s::text IS NULL OR t.ticket_id ILIKE %(like)s OR t.subject ILIKE %(like)s
-                          OR t.body ILIKE %(like)s)
-                     AND (%(c)s::text IS NULL OR d.category = %(c)s::text)
-                     AND (%(p)s::text IS NULL OR d.priority = %(p)s::text)
-                     AND (%(a)s::text IS NULL OR d.action = %(a)s::text)
-                     AND (%(s)s::text IS NULL OR d.status = %(s)s::text)
-                   ORDER BY t.received_at DESC""",
-                {"q": q, "like": f"%{q}%", "c": category, "p": priority, "a": action, "s": status},
+                   WHERE (%(q)s::text IS NULL OR t.ticket_id ILIKE %(like)s
+                          OR t.subject ILIKE %(like)s OR t.body ILIKE %(like)s)""",
+                {"q": q, "like": f"%{q}%"},
             ).fetchall()
-            out += [_jsonable(r) for r in rows]
+        for r in rows:
+            job = jobs.get(r["ticket_id"])
+            state = ticket_state(r["decision_status"], r["approval_status"], r["sent"],
+                                 job["status"] if job else None)
+            out.append({**_jsonable(r), "state": state, "allowed_actions": allowed_actions(state)})
+    out.sort(key=lambda r: (r["tenant_id"], r["ticket_id"]))
+    out.sort(key=lambda r: r["received_at"], reverse=True)  # stable: ties keep tenant/id order
     return out
+
+
+@app.get("/api/tickets")
+def list_tickets(tenant: str | None = None, q: str | None = None, state: str | None = None,
+                 category: str | None = None, priority: str | None = None,
+                 action: str | None = None, status: str | None = None,
+                 op: Operator = Depends(operator)) -> list[dict]:
+    rows = _ticket_rows(_tenants(op, tenant), q)
+    filters = {"state": state, "category": category, "priority": priority, "action": action,
+               "decision_status": status}
+    return [r for r in rows if all(v is None or r.get(k) == v for k, v in filters.items())]
+
+
+@app.get("/api/tickets/summary")
+def tickets_summary(tenant: str | None = None, op: Operator = Depends(operator)) -> dict:
+    """Ticket counts by state. Each ticket counts once, however many events it has."""
+    from relay.ticket_view import STATES
+
+    rows = _ticket_rows(_tenants(op, tenant))
+    counts = {s: 0 for s in STATES}
+    for r in rows:
+        counts[r["state"]] += 1
+    return {"total": len(rows), "by_state": counts}
 
 
 @app.get("/api/tickets/{tenant}/{ticket_id}")
@@ -208,18 +236,116 @@ def ticket_detail(tenant: str, ticket_id: str, op: Operator = Depends(operator))
             "approvals": conn.execute("SELECT * FROM approvals WHERE ticket_id = %s ORDER BY attempt",
                                       (ticket_id,)).fetchall(),
             "outbox": conn.execute("SELECT * FROM outbox WHERE ticket_id = %s", (ticket_id,)).fetchone(),
-            "cases": conn.execute("SELECT * FROM cases WHERE ticket_id = %s", (ticket_id,)).fetchall(),
-            "threads": conn.execute("SELECT * FROM workflows WHERE ticket_id = %s ORDER BY started_at",
-                                    (ticket_id,)).fetchall(),
+            "cases": conn.execute("SELECT * FROM cases WHERE ticket_id = %s ORDER BY created_at, case_id",
+                                  (ticket_id,)).fetchall(),
+            "threads": conn.execute("SELECT * FROM workflows WHERE ticket_id = %s "
+                                    "ORDER BY started_at, thread_id", (ticket_id,)).fetchall(),
             "model_calls": conn.execute(
-                "SELECT task, model, tokens_in, tokens_out, latency_ms, ok, error_class, at FROM model_calls "
-                "WHERE ticket_id = %s AND run_id NOT LIKE 'eval-%%' ORDER BY call_id", (ticket_id,)).fetchall(),
+                "SELECT task, model, tokens_in, tokens_out, latency_ms, ok, error_class, at, thread_id "
+                "FROM model_calls WHERE ticket_id = %s AND run_id NOT LIKE 'eval-%%' ORDER BY call_id",
+                (ticket_id,)).fetchall(),
             "audit": conn.execute("SELECT * FROM audit_log WHERE ticket_id = %s ORDER BY audit_id",
                                   (ticket_id,)).fetchall(),
             "events": conn.execute(f"SELECT {', '.join(EVENT_FIELDS)} FROM events WHERE ticket_id = %s "
                                    "ORDER BY event_id", (ticket_id,)).fetchall(),
         }
+    view = next(r for r in _ticket_rows([tenant], None) if r["ticket_id"] == ticket_id)
+    pending = [a for a in data["approvals"] if a["status"] == "pending"]
+    data["view"] = {"state": view["state"], "allowed_actions": view["allowed_actions"],
+                    "pending_approval_id": pending[-1]["approval_id"] if pending else None}
     return json.loads(json.dumps(data, default=str))
+
+
+# ------------------------------------------------------------------ inbox import + explicit processing
+
+def _inbox_files() -> dict[str, Path]:
+    from relay.config import ROOT
+
+    return {str(p.relative_to(ROOT)): p for p in sorted((ROOT / "data").glob("*/tickets.jsonl"))}
+
+
+@app.get("/api/inbox")
+def inbox_files(op: Operator = Depends(operator)) -> list[dict]:
+    """Ticket files the console may import (the seed inboxes under data/)."""
+    from relay.queue import read_inbox
+
+    out = []
+    for name, path in _inbox_files().items():
+        tickets, rejected = read_inbox(path)
+        mine = [t for t in tickets if t.tenant in op.tenants]
+        present = 0
+        for tenant in sorted({t.tenant for t in mine}):
+            with tenant_tx(tenant) as conn:
+                ids = [t.id for t in mine if t.tenant == tenant]
+                present += conn.execute("SELECT count(*) AS n FROM tickets WHERE ticket_id = ANY(%s)",
+                                        (ids,)).fetchone()["n"]
+        out.append({"file": name, "tickets": len(mine), "already_imported": present,
+                    "rejected_lines": len(rejected)})
+    return out
+
+
+class ImportIn(BaseModel):
+    file: str
+
+
+@app.post("/api/inbox/import")
+def import_inbox(body: ImportIn, op: Operator = Depends(operator)) -> dict:
+    """Store an inbox's tickets as received. Nothing is processed: no job, no model call."""
+    from relay.queue import read_inbox
+
+    path = _inbox_files().get(body.file)
+    if path is None:
+        raise HTTPException(400, "unknown inbox file; choose one listed by GET /api/inbox")
+    tickets, rejected = read_inbox(path)
+    new, existing, not_authorized = [], [], []
+    for t in tickets:
+        if t.tenant not in op.tenants:
+            not_authorized.append(f"{t.tenant}/{t.id}")
+        elif store.upsert_ticket(t, source=body.file):
+            new.append(f"{t.tenant}/{t.id}")
+        else:
+            existing.append(f"{t.tenant}/{t.id}")
+    for r in rejected:
+        store.log_rejection(None, str(r["tenant"]), str(r["ticket_id"]), r["reason"])
+    return {"imported": new, "already_present": existing, "not_authorized": not_authorized,
+            "rejected": rejected}
+
+
+@app.post("/api/tickets/{tenant}/{ticket_id}/process", status_code=202)
+def process_ticket(tenant: str, ticket_id: str, op: Operator = Depends(operator)) -> dict:
+    """Process exactly this ticket, once. Re-requesting while it is queued, running or
+    already decided returns 409; the queue's unique keys make duplicates impossible even
+    for concurrent requests."""
+    from relay.orchestrator import Orchestrator, thread_id_for
+    from relay.queue import Worker, enqueue_ticket
+
+    _tenants(op, tenant)
+    ticket = store.load_ticket(tenant, ticket_id)
+    if ticket is None:
+        raise HTTPException(404, "ticket not found")
+    s = get_settings()
+    with _jobs_lock:
+        view = next(r for r in _ticket_rows([tenant], None) if r["ticket_id"] == ticket_id)
+        if "process" not in view["allowed_actions"]:
+            raise HTTPException(409, f"ticket cannot be processed in its current state ({view['state']})")
+        run_id = store.new_run_id()
+        store.create_run(run_id, "inbox", f"console:{op.name}", s.max_tokens_per_run)
+        outcome = enqueue_ticket(ticket, run_id, s.max_attempts)
+        if outcome == "duplicate":
+            raise HTTPException(409, "ticket is already being processed or was already decided")
+        with platform_tx() as conn:
+            generation = conn.execute(
+                "SELECT max(generation) AS g FROM jobs WHERE tenant_id = %s AND ticket_id = %s",
+                (tenant, ticket_id)).fetchone()["g"]
+
+    def work():
+        Worker(Orchestrator(default_gateway()), f"console-{run_id[-4:]}").drain(run_id)
+        store.finish_run(run_id)
+        outputs.export_decisions()
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"run_id": run_id, "outcome": outcome,
+            "thread_id": thread_id_for(tenant, ticket_id, generation)}
 
 
 # ------------------------------------------------------------------ runs (LangGraph threads)
@@ -233,8 +359,11 @@ def list_runs(tenant: str | None = None, limit: int = Query(50, le=500),
             out += [_jsonable(r) for r in conn.execute(
                 """SELECT w.*, d.action, d.status AS decision_status, d.latency_ms
                    FROM workflows w LEFT JOIN decisions d ON d.thread_id = w.thread_id
-                   ORDER BY w.updated_at DESC LIMIT %s""", (limit,))]
-    return sorted(out, key=lambda r: r["updated_at"], reverse=True)[:limit]
+                   ORDER BY w.started_at DESC, w.thread_id LIMIT %s""", (limit,))]
+    # Newest started first; a run never moves because it was updated.
+    out.sort(key=lambda r: r["thread_id"])
+    out.sort(key=lambda r: r["started_at"], reverse=True)
+    return out[:limit]
 
 
 def _thread_tenant(thread_id: str, op: Operator) -> str:
@@ -460,11 +589,14 @@ def escalations(tenant: str | None = None, op: Operator = Depends(operator)) -> 
             for c in conn.execute(
                     """SELECT c.*, d.category, d.priority, d.injection_detected, t.subject, t.received_at
                        FROM cases c LEFT JOIN decisions d USING (tenant_id, ticket_id)
-                       LEFT JOIN tickets t USING (tenant_id, ticket_id) ORDER BY c.created_at DESC"""):
+                       LEFT JOIN tickets t USING (tenant_id, ticket_id)
+                       ORDER BY c.created_at DESC, c.case_id"""):
                 audit = conn.execute("SELECT actor, action, from_state, to_state, reason, at FROM audit_log "
                                      "WHERE ticket_id = %s ORDER BY audit_id", (c["ticket_id"],)).fetchall()
                 out.append({**c, "audit": audit,
                             "next_step": NEXT_STEP.get(c["reason_code"], "Support lead reviews the case.")})
+    out.sort(key=lambda c: c["case_id"])
+    out.sort(key=lambda c: c["created_at"], reverse=True)  # newest first, ties by case id
     return json.loads(json.dumps(out, default=str))
 
 

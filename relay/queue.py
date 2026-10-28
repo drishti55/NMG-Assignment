@@ -43,11 +43,12 @@ def _job_key(tenant_id: str, ticket_id: str, generation: int) -> str:
     return f"{tenant_id}:{ticket_id}:{generation}"
 
 
-def enqueue_ticket(ticket: Ticket, run_id: str, max_attempts: int) -> str:
+def enqueue_ticket(ticket: Ticket, run_id: str, max_attempts: int,
+                   source: str | None = None) -> str:
     """Returns 'enqueued', 'adopted' or 'duplicate'. Same ticket id => same business decision.
     'adopted': a job left queued/leased by an earlier (e.g. killed) run joins this run, so this
     run waits for it and reclaims it once its lease expires."""
-    store.upsert_ticket(ticket)
+    store.upsert_ticket(ticket, source)
     decision = store.get_decision(ticket.tenant, ticket.id)
     with platform_tx() as conn:
         last = conn.execute(
@@ -67,19 +68,45 @@ def enqueue_ticket(ticket: Ticket, run_id: str, max_attempts: int) -> str:
         if last is None and decision is not None and not retriable:
             return "duplicate"
         generation = (last["generation"] + 1) if last else 1
-        conn.execute(
+        inserted = conn.execute(
             """INSERT INTO jobs (idempotency_key, tenant_id, ticket_id, generation, run_id,
                    max_attempts)
-               VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (idempotency_key) DO NOTHING""",
+               VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (idempotency_key) DO NOTHING
+               RETURNING job_id""",
             (_job_key(ticket.tenant, ticket.id, generation), ticket.tenant, ticket.id,
              generation, run_id, max_attempts),
-        )
-    return "enqueued"
+        ).fetchone()
+    # A concurrent request for the same new ticket may have inserted the job first.
+    return "enqueued" if inserted else "duplicate"
 
 
-def enqueue_inbox(path: Path, run_id: str) -> EnqueueReport:
-    s = get_settings()
-    report = EnqueueReport(run_id, [], [], [], [])
+def ticket_states(tenant_id: str) -> dict[str, dict]:
+    """Latest queue job per ticket of one tenant: {ticket_id: {status, source, run_id}}."""
+    with platform_tx() as conn:
+        rows = conn.execute(
+            """SELECT DISTINCT ON (j.ticket_id) j.ticket_id, j.status, j.run_id, j.last_error,
+                      r.source
+               FROM jobs j JOIN runs r USING (run_id)
+               WHERE j.tenant_id = %s
+               ORDER BY j.ticket_id, j.generation DESC""",
+            (tenant_id,),
+        ).fetchall()
+    return {r["ticket_id"]: r for r in rows}
+
+
+def _display_path(path: Path) -> str:
+    from relay.config import ROOT
+
+    try:
+        return str(path.resolve().relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def read_inbox(path: Path) -> tuple[list[Ticket], list[dict]]:
+    """Parse an inbox file. Returns (valid tickets, rejected lines). Unknown tenants are
+    rejected here; nothing is stored."""
+    tickets, rejected = [], []
     for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
@@ -87,19 +114,31 @@ def enqueue_inbox(path: Path, run_id: str) -> EnqueueReport:
         try:
             raw = json.loads(line)
             ticket = Ticket.model_validate(raw)
-            require_tenant(ticket.tenant)
         except (json.JSONDecodeError, ValidationError) as e:
-            reason = f"line {lineno}: invalid ticket ({type(e).__name__})"
             raw = raw if isinstance(raw, dict) else {}
-            store.log_rejection(run_id, str(raw.get("tenant")), str(raw.get("id")), reason)
-            report.rejected.append({"line": lineno, "ticket_id": raw.get("id"), "reason": reason})
+            rejected.append({"line": lineno, "ticket_id": raw.get("id"), "tenant": raw.get("tenant"),
+                             "reason": f"line {lineno}: invalid ticket ({type(e).__name__})"})
             continue
+        try:
+            require_tenant(ticket.tenant)
         except UnknownTenantError:
-            reason = f"unknown tenant {ticket.tenant!r}: rejected, never processed under a default"
-            store.log_rejection(run_id, ticket.tenant, ticket.id, reason)
-            report.rejected.append({"line": lineno, "ticket_id": ticket.id, "reason": reason})
+            rejected.append({"line": lineno, "ticket_id": ticket.id, "tenant": ticket.tenant,
+                             "reason": f"unknown tenant {ticket.tenant!r}: rejected, never processed "
+                                       "under a default"})
             continue
-        outcome = enqueue_ticket(ticket, run_id, s.max_attempts)
+        tickets.append(ticket)
+    return tickets, rejected
+
+
+def enqueue_inbox(path: Path, run_id: str) -> EnqueueReport:
+    s = get_settings()
+    report = EnqueueReport(run_id, [], [], [], [])
+    tickets, rejected = read_inbox(path)
+    for r in rejected:
+        store.log_rejection(run_id, str(r["tenant"]), str(r["ticket_id"]), r["reason"])
+        report.rejected.append({"line": r["line"], "ticket_id": r["ticket_id"], "reason": r["reason"]})
+    for ticket in tickets:
+        outcome = enqueue_ticket(ticket, run_id, s.max_attempts, source=_display_path(path))
         key = f"{ticket.tenant}/{ticket.id}"
         {"enqueued": report.enqueued, "adopted": report.adopted,
          "duplicate": report.skipped_duplicates}[outcome].append(key)

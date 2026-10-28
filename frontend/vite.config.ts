@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -8,6 +9,7 @@ const target = `http://127.0.0.1:${process.env.RELAY_API_PORT ?? "8077"}`;
 
 export default defineConfig({
   plugins: [react()],
+  test: { environment: "jsdom", include: ["src/**/*.test.{ts,tsx}"] },
   server: {
     port: 5173,
     proxy: {

@@ -10,7 +10,7 @@ DOCKER ?= $(shell command -v docker 2>/dev/null || echo /Applications/Docker.app
 COMPOSE := $(DOCKER) compose
 RELAY := uv run --frozen relay
 
-.PHONY: help demo check-deps db install migrate seed run worker approve reject cases eval test api frontend dev health report export down clean
+.PHONY: help demo check-deps db install migrate seed run worker approve reject cases eval test test-frontend api frontend dev health report export down clean
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[32m%-10s\033[0m %s\n", $$1, $$2}'
@@ -68,6 +68,9 @@ eval: install ## Golden-set evaluation: make eval RUNS=5
 
 test: db install ## Test suite (needs Postgres, not Ollama)
 	@uv run --frozen --group dev pytest -o addopts="" -q
+
+test-frontend: ## Console checks: type-check + Vitest (no backend needed)
+	@cd frontend && (test -d node_modules || npm ci --no-audit --no-fund) && npx tsc -p tsconfig.json --noEmit && npx vitest run
 
 api: install ## Start the API on :8077
 	@uv run --frozen uvicorn relay.api:app --host 127.0.0.1 --port $${RELAY_API_PORT:-8077}

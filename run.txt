@@ -56,7 +56,8 @@ uv run relay eval --runs 3 --no-draft                 # faster: triage + routing
 
 5. TESTS (assessment E4) - needs Postgres, not Ollama
 -----------------------------------------------------
-make test                                             # 118 tests, ~5 s
+make test                                             # 135 backend tests, ~5 s
+make test-frontend                                    # console type-check + 35 Vitest tests
 uv run --group dev pytest -o addopts="" -q tests/test_checkpoint_isolation.py   # one file
 uv run --group dev pytest -o addopts="" -q -k approval                         # by name
 
@@ -65,6 +66,9 @@ uv run --group dev pytest -o addopts="" -q -k approval                         #
 --------------------
 make dev                                              # API :8077 + console :5173, Ctrl-C stops both
 open http://localhost:5173
+# Header switch: "User Mode - Simple view" (default) or "Developer Mode - Technical view".
+# In the console: Tickets -> "Load tickets from an inbox file" imports WITHOUT processing;
+# open a ticket -> "Process this ticket" -> confirm. Nothing runs unless you confirm.
 # or separately:
 make api                                              # FastAPI on :8077  (docs: http://localhost:8077/docs)
 make frontend                                         # Vite dev server on :5173

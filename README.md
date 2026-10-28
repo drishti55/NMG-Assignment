@@ -55,7 +55,8 @@ make approve ID=apr-5876b41c9454 BY=yourname   # approve -> out/outbox.jsonl (ex
 make reject  ID=apr-… REASON='why' BY=yourname # one redraft, then escalation
 make run INBOX=path/to/other_tickets.jsonl     # any file in the same format
 make eval RUNS=5                               # golden-set evaluation -> docs/EVAL.md
-make test                                      # 118 tests, Postgres only (no Ollama)
+make test                                      # 135 backend tests, Postgres only (no Ollama)
+make test-frontend                             # console type-check + 35 Vitest tests
 make dev                                       # API :8077 + console http://localhost:5173
 ```
 
@@ -71,12 +72,22 @@ The underlying CLI is `uv run relay --help` (`migrate`, `seed`, `run`, `worker`,
 * `eval/runs/run_N.jsonl`, `eval/runs/summary.json` – evaluation records.
 
 ## Web console
-`make dev`, then open http://localhost:5173. Pages: Operations dashboard, Live agent
-monitor (the compiled LangGraph, lit by real execution events over SSE), Run inspector
-(Developer mode ON shows node timeline, typed contracts, routing overrides, token
-counts, retrieval scores, checker rules, queue lease), Tickets, Approvals, Escalations,
-Evaluation lab, System health. All numbers come from the API and database. Developer
-mode is presentation only; it does not change what the backend authorizes.
+`make dev`, then open http://localhost:5173. A switch in the header chooses the view:
+
+* **User Mode (simple view, the default):** plain-language pages. Dashboard ("needs your
+  attention", each number links to its list), Tickets (import an inbox file *without*
+  processing it, filter by status), a ticket page that explains the decision, the reason,
+  the draft and a step-by-step progress tracker, and the work queues (pending approvals,
+  escalations, run history).
+* **Developer Mode (technical view):** the same pages plus the compiled LangGraph graph,
+  the node timeline with typed contracts, routing overrides, retrieval similarity scores,
+  checker rule ids, per-call model and token counts, queue leases, correlation ids and raw
+  records. It is presentation only: it never changes processing, approvals or tenant access.
+
+Nothing happens on its own: opening, refreshing, navigating or switching modes only reads
+data. A ticket is processed only when you click "Process this ticket" on its page and
+confirm; the backend lists which actions are valid and refuses duplicates. Nothing is ever
+selected automatically, and lists use one stable order (newest first).
 
 ## Requirement status
 
@@ -92,7 +103,7 @@ mode is presentation only; it does not change what the backend authorizes.
 | E1 | Gateway: routing, per-call metering, ticket/run budgets → held_budget | Done | `relay/gateway.py`; budget tests |
 | E2 | Postgres queue, leases, idempotency, backoff+jitter, dead letter, kill-safe | Done | `relay/queue.py`; lease tests; real `kill -9` run (RUNBOOK) |
 | E3 | `make eval RUNS=5` with all required metrics | Done | `docs/EVAL.md` |
-| E4 | Pytest without Ollama (fake model) | Done | 118 tests, ~4 s |
+| E4 | Pytest without Ollama (fake model) | Done | 135 backend tests (~5 s) + 35 console tests |
 | S1 | Circuit breaker + fallback, `CHAOS_FAIL_RATE` | Partial | chaos injection + retries only; no breaker/fallback |
 | S2 | Internal and client report views | Done | `make report`, `make report VIEW=client TENANT=…`; web console |
 | S3 | CI | Done (not yet run on GitHub) | `.github/workflows/ci.yml` |
@@ -112,7 +123,7 @@ mode is presentation only; it does not change what the backend authorizes.
 * **Evaluation** (5 runs × 24 tickets, drafting on): action accuracy 79.2%, category 87.5%,
   injection recall 100% with 0% false positives, stability 100%, about 10 minutes for
   5 runs (611 s); identical results in three separate evaluation sessions. See [EVAL](docs/EVAL.md).
-* **Tests:** 118 passed (`make test`).
+* **Tests:** 135 backend tests passed (`make test`); 35 console tests passed (`make test-frontend`).
 
 ## Assumptions
 * **The lead agent is deterministic code.** The brief's lead "plans, routes, enforces

@@ -1,26 +1,43 @@
-import type { ReactNode } from "react";
-import { fmt } from "../lib/api";
+import { useEffect, useId, useRef, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { explainError, fmt } from "../lib/api";
+import { useMode } from "../lib/mode";
+import { APPROVAL, STATE, type Meaning, type Tone } from "../lib/status";
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+export const TONE_TEXT: Record<Tone, string> = {
+  neutral: "text-fg-muted", info: "text-series-1", attention: "text-status-warning",
+  good: "text-[#3ecf7a]", warning: "text-status-serious", critical: "text-[#ef6b6b]",
+};
+const TONE_BG: Record<Tone, string> = {
+  neutral: "border-ink-600 bg-ink-850", info: "border-series-1/40 bg-series-1/10",
+  attention: "border-status-warning/40 bg-status-warning/10", good: "border-accent/40 bg-accent-soft/50",
+  warning: "border-status-serious/40 bg-status-serious/10", critical: "border-status-critical/50 bg-status-critical/10",
+};
+
+/** Every page starts by saying what it is and what you can do here. */
+export function PageHeader({ title, purpose, next, actions }: {
+  title: string; purpose: ReactNode; next?: ReactNode; actions?: ReactNode;
+}) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 max-w-2xl text-sm text-fg-muted">{subtitle}</p>}
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div className="max-w-3xl">
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <p className="mt-1.5 text-[15px] leading-relaxed text-fg-muted">{purpose}</p>
+        {next && <p className="mt-1.5 text-sm text-fg-faint"><span className="font-medium text-fg-muted">What to do: </span>{next}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
-export function Card({ title, right, children, className = "" }: {
-  title?: string; right?: ReactNode; children: ReactNode; className?: string;
+export function Card({ title, help, right, children, className = "" }: {
+  title?: ReactNode; help?: string; right?: ReactNode; children: ReactNode; className?: string;
 }) {
   return (
     <section className={`card ${className}`}>
       {title && (
-        <header className="flex items-center justify-between border-b border-ink-700 px-4 py-2.5">
-          <h2 className="text-sm font-medium">{title}</h2>
+        <header className="flex items-center justify-between gap-3 border-b border-ink-700 px-4 py-3">
+          <h2 className="flex items-center gap-1.5 text-[15px] font-semibold">{title}{help && <Help text={help} />}</h2>
           {right}
         </header>
       )}
@@ -29,124 +46,97 @@ export function Card({ title, right, children, className = "" }: {
   );
 }
 
-export function Stat({ label, value, hint, tone }: {
-  label: string; value: ReactNode; hint?: ReactNode; tone?: "good" | "warning" | "critical";
-}) {
-  const bar = { good: "bg-status-good", warning: "bg-status-warning", critical: "bg-status-critical" };
+/** Accessible tooltip: shows on hover and on keyboard focus. */
+export function Help({ text }: { text: string }) {
+  const id = useId();
   return (
-    <div className="card relative overflow-hidden px-4 py-3">
-      {tone && <span className={`absolute inset-y-0 left-0 w-0.5 ${bar[tone]}`} aria-hidden />}
-      <div className="label">{label}</div>
-      <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-fg-faint">{hint}</div>}
-    </div>
-  );
-}
-
-const STATUS: Record<string, { color: string; icon: string; text: string }> = {
-  pending_approval: { color: "text-status-warning", icon: "◷", text: "pending approval" },
-  pending: { color: "text-status-warning", icon: "◷", text: "pending" },
-  waiting_for_approval: { color: "text-status-warning", icon: "◷", text: "waiting for approval" },
-  awaiting_approval: { color: "text-status-warning", icon: "◷", text: "awaiting approval" },
-  approved: { color: "text-status-good", icon: "✓", text: "approved" },
-  completed: { color: "text-status-good", icon: "✓", text: "completed" },
-  done: { color: "text-status-good", icon: "✓", text: "done" },
-  sent: { color: "text-status-good", icon: "✓", text: "sent" },
-  escalated: { color: "text-status-serious", icon: "▲", text: "escalated" },
-  rejected: { color: "text-status-serious", icon: "✕", text: "rejected" },
-  retrying: { color: "text-status-serious", icon: "↻", text: "retrying" },
-  held_budget: { color: "text-status-serious", icon: "⏸", text: "held (budget)" },
-  failed: { color: "text-[#ef6b6b]", icon: "✕", text: "failed" },
-  dead: { color: "text-[#ef6b6b]", icon: "✕", text: "dead letter" },
-  running: { color: "text-accent", icon: "●", text: "running" },
-  leased: { color: "text-accent", icon: "●", text: "leased" },
-  queued: { color: "text-fg-muted", icon: "○", text: "queued" },
-  open: { color: "text-status-serious", icon: "▲", text: "open" },
-};
-
-/** Status is always icon + label, never color alone. */
-export function StatusBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <span className="text-fg-faint">—</span>;
-  const s = STATUS[status] ?? { color: "text-fg-muted", icon: "·", text: fmt.label(status) };
-  return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium ${s.color}`}>
-      <span aria-hidden>{s.icon}</span>
-      {s.text}
+    <span className="group relative inline-flex">
+      <button type="button" aria-describedby={id} aria-label="More information"
+        className="grid h-4 w-4 place-items-center rounded-full border border-ink-600 text-[10px] font-semibold text-fg-faint hover:border-fg-faint hover:text-fg focus:text-fg">
+        ?
+      </button>
+      <span id={id} role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-6 z-30 hidden w-64 -translate-x-1/2 rounded-md border border-ink-600 bg-ink-850 px-3 py-2 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-fg shadow-xl group-focus-within:block group-hover:block">
+        {text}
+      </span>
     </span>
   );
 }
 
-export function Pill({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "accent" | "critical" }) {
-  const cls = {
-    neutral: "border-ink-600 text-fg-muted",
-    accent: "border-accent/40 text-accent",
-    critical: "border-status-critical/50 text-[#f08a8a]",
-  }[tone];
-  return <span className={`inline-flex items-center rounded border px-1.5 py-px text-[11px] ${cls}`}>{children}</span>;
-}
-
-export function Loading({ rows = 3 }: { rows?: number }) {
+export function Badge({ meaning, raw }: { meaning: Meaning; raw?: string }) {
+  const { isDev } = useMode();
   return (
-    <div className="space-y-2" aria-busy>
-      {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="h-4 animate-pulse rounded bg-ink-800" style={{ width: `${90 - i * 15}%` }} />
-      ))}
-    </div>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium ${TONE_BG[meaning.tone]} ${TONE_TEXT[meaning.tone]}`}
+      title={meaning.help}>
+      <span aria-hidden>{meaning.icon}</span>
+      {meaning.label}
+      {isDev && raw && <code className="ml-1 font-mono text-[10px] opacity-70">{raw}</code>}
+    </span>
   );
 }
 
-export function ErrorBox({ error, onRetry }: { error: string; onRetry?: () => void }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-status-critical/40 bg-status-critical/5 px-3 py-2 text-sm text-[#f08a8a]">
-      <span>
-        <span aria-hidden>✕ </span>
-        {error}
-      </span>
-      {onRetry && <button className="btn-ghost" onClick={onRetry}>Retry</button>}
-    </div>
-  );
+export function StateBadge({ state }: { state: string | null | undefined }) {
+  if (!state) return <span className="text-fg-faint">—</span>;
+  return <Badge meaning={STATE[state] ?? { label: fmt.label(state), help: "", tone: "neutral", icon: "·" }} raw={state} />;
 }
 
-export function Empty({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <div className="rounded-md border border-dashed border-ink-600 px-4 py-8 text-center">
-      <div className="text-sm font-medium text-fg-muted">{title}</div>
-      {children && <div className="mt-1 text-xs text-fg-faint">{children}</div>}
-    </div>
-  );
+export function ApprovalBadge({ status }: { status: string }) {
+  return <Badge meaning={APPROVAL[status] ?? { label: status, help: "", tone: "neutral", icon: "·" }} raw={status} />;
 }
 
-/** Horizontal bars, one series. Every bar is direct-labelled with its value; hover shows a tooltip. */
-export function BarList({ items, color = "bg-accent-strong", format = fmt.int }: {
-  items: { label: string; value: number; hint?: string }[];
-  color?: string;
-  format?: (n: number) => string;
+/** A number with its definition; links to the matching filtered list when clickable. */
+export function Stat({ label, value, help, to, tone }: {
+  label: string; value: ReactNode; help: string; to?: string; tone?: Tone;
 }) {
-  if (!items.length) return <Empty title="No data yet" />;
-  const max = Math.max(...items.map((i) => i.value), 1);
+  const body = (
+    <>
+      <div className="flex items-center gap-1.5 text-[13px] font-medium text-fg-muted">{label}</div>
+      <div className={`mt-1 text-3xl font-semibold tabular-nums tracking-tight ${tone ? TONE_TEXT[tone] : ""}`}>{value}</div>
+      <div className="mt-1 text-xs leading-snug text-fg-faint">{help}</div>
+      {to && <div className="mt-2 text-xs font-medium text-accent">View list →</div>}
+    </>
+  );
+  const cls = "card block px-4 py-3.5 text-left";
+  return to ? <Link to={to} className={`${cls} transition-colors hover:border-ink-600 hover:bg-ink-850`}>{body}</Link> : <div className={cls}>{body}</div>;
+}
+
+export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
-    <ul className="space-y-2">
-      {items.map((i) => (
-        <li key={i.label} className="group relative grid grid-cols-[minmax(7rem,10rem)_1fr_auto] items-center gap-3 text-sm">
-          <span className="truncate text-fg-muted">{fmt.label(i.label)}</span>
-          <span className="h-2 rounded-r bg-ink-800">
-            <span className={`block h-2 rounded-r ${color}`} style={{ width: `${(i.value / max) * 100}%` }} />
-          </span>
-          <span className="tabular-nums text-fg">{format(i.value)}</span>
-          <span role="tooltip" className="pointer-events-none absolute -top-8 left-40 z-10 hidden rounded border border-ink-600 bg-ink-850 px-2 py-1 text-xs text-fg shadow-lg group-hover:block">
-            {fmt.label(i.label)}: {format(i.value)}{i.hint ? ` · ${i.hint}` : ""}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-2" aria-busy aria-live="polite">
+      <span className="sr-only">{label}</span>
+      {[90, 72, 55].map((w) => <div key={w} className="h-4 animate-pulse rounded bg-ink-800" style={{ width: `${w}%` }} />)}
+    </div>
   );
 }
 
-export function KV({ rows }: { rows: [string, ReactNode][] }) {
+export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-      {rows.map(([k, v]) => (
-        <div key={k} className="contents">
+    <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-status-critical/40 bg-status-critical/5 px-3 py-2.5 text-sm text-[#f3a0a0]">
+      <span><span aria-hidden>✕ </span>{typeof error === "string" ? error : explainError(error)}</span>
+      {onRetry && <button className="btn-ghost" onClick={onRetry}>Try again</button>}
+    </div>
+  );
+}
+
+export function Notice({ tone = "info", children }: { tone?: Tone; children: ReactNode }) {
+  return <div role="status" className={`rounded-md border px-3 py-2.5 text-sm ${TONE_BG[tone]} ${TONE_TEXT[tone]}`}>{children}</div>;
+}
+
+export function Empty({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed border-ink-600 px-4 py-10 text-center">
+      <div className="text-[15px] font-medium text-fg">{title}</div>
+      {children && <div className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-fg-muted">{children}</div>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+export function KV({ rows }: { rows: [ReactNode, ReactNode][] }) {
+  return (
+    <dl className="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2 text-sm">
+      {rows.map(([k, v], i) => (
+        <div key={i} className="contents">
           <dt className="text-fg-faint">{k}</dt>
           <dd className="min-w-0 break-words">{v}</dd>
         </div>
@@ -157,22 +147,90 @@ export function KV({ rows }: { rows: [string, ReactNode][] }) {
 
 export function Json({ value }: { value: unknown }) {
   return (
-    <pre className="mono max-h-80 overflow-auto rounded-md border border-ink-700 bg-ink-950 p-3 leading-relaxed text-fg-muted">
+    <pre className="mono max-h-96 overflow-auto rounded-md border border-ink-700 bg-ink-950 p-3 leading-relaxed text-fg-muted">
       {JSON.stringify(value, null, 2)}
     </pre>
   );
 }
 
+const RULE_TEXT: Record<string, string> = {
+  CITE_EXISTS: "Every cited article exists in this company's knowledge base",
+  CITE_NOT_INTERNAL: "No staff-only article is cited",
+  CITE_RETRIEVED: "Cited articles were the ones found for this ticket",
+  CITE_DECLARED: "Article references in the text are recorded",
+  NO_INTERNAL_TEXT: "No staff-only text or internal reference codes",
+  NO_OTHER_TENANT: "No mention of another company",
+  NO_CLINICAL_ADVICE: "No medical advice, diagnosis or medication",
+  NO_FOREIGN_IDS: "No other customer's or patient's identifiers",
+  NUMBERS_GROUNDED: "Every number comes from the knowledge base or the ticket",
+  NO_UNGROUNDED_CONTACTS: "No invented email addresses, links or phone numbers",
+  MAX_150_WORDS: "150 words or fewer",
+  ASK_HAS_QUESTION: "The message asks the customer a question",
+  GROUNDED: "Based on the knowledge base",
+  CONTENT_SUPPORTED: "Content matches the cited articles",
+  UNCITED_NO_COMMITMENTS: "A short courtesy note with no promises or figures",
+};
+
 export function CheckRules({ rules }: { rules: { rule_id: string; passed: boolean; message: string }[] }) {
+  const { isDev } = useMode();
   return (
-    <ul className="divide-y divide-ink-700 text-sm">
+    <ul className="divide-y divide-ink-800 text-sm">
       {rules.map((r) => (
-        <li key={r.rule_id} className="flex items-start gap-2 py-1.5">
-          <span className={r.passed ? "text-status-good" : "text-[#ef6b6b]"} aria-hidden>{r.passed ? "✓" : "✕"}</span>
-          <span className="mono w-48 shrink-0 text-fg">{r.rule_id}</span>
-          <span className="text-fg-muted">{r.passed ? (r.message === "ok" ? "pass" : r.message) : r.message}</span>
+        <li key={r.rule_id} className="flex items-start gap-2.5 py-1.5">
+          <span className={r.passed ? "text-[#3ecf7a]" : "text-[#ef6b6b]"} aria-label={r.passed ? "passed" : "failed"}>{r.passed ? "✓" : "✕"}</span>
+          <span className="min-w-0">
+            <span>{RULE_TEXT[r.rule_id] ?? r.rule_id}</span>
+            {isDev && <code className="ml-2 font-mono text-[11px] text-fg-faint">{r.rule_id}</code>}
+            {(!r.passed || (isDev && r.message !== "ok")) && <span className="block text-xs text-fg-muted">{r.message}</span>}
+          </span>
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Modal confirmation for consequential actions. Esc or Cancel closes; focus starts on Cancel. */
+export function ConfirmDialog({ open, title, children, confirmLabel, tone = "primary", busy, onConfirm, onCancel, confirmDisabled }: {
+  open: boolean; title: string; children: ReactNode; confirmLabel: string; tone?: "primary" | "danger";
+  busy?: boolean; onConfirm: () => void; onCancel: () => void; confirmDisabled?: boolean;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    if (!open) return;
+    cancelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !busy && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, busy, onCancel]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="presentation">
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="card w-full max-w-lg p-5 shadow-2xl">
+        <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
+        <div className="mt-3 space-y-3 text-sm leading-relaxed text-fg-muted">{children}</div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button ref={cancelRef} className="btn-ghost" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className={tone === "danger" ? "btn-danger" : "btn-primary"} onClick={onConfirm} disabled={busy || confirmDisabled}>
+            {busy ? "Working…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Developer Mode panel wrapper: visibly technical, with an explanation. */
+export function DevPanel({ title, explain, children }: { title: string; explain: string; children: ReactNode }) {
+  return (
+    <section className="rounded-lg border border-series-1/30 bg-[#0e1520]">
+      <header className="border-b border-series-1/20 px-4 py-2.5">
+        <h2 className="flex items-center gap-2 font-mono text-[13px] font-semibold text-[#8fbcf2]">
+          <span className="rounded bg-series-1/20 px-1.5 py-px text-[10px] tracking-wider">DEV</span>{title}
+        </h2>
+        <p className="mt-0.5 text-xs text-fg-faint">{explain}</p>
+      </header>
+      <div className="p-4">{children}</div>
+    </section>
   );
 }

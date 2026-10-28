@@ -19,6 +19,6 @@ jobs:
       - run: uv sync --frozen --group dev
       # No Ollama in CI: the suite uses a deterministic fake model backend.
       - run: uv run --frozen --group dev pytest -o addopts="" -q
-      - name: Frontend typecheck
+      - name: Frontend type-check and tests
         working-directory: frontend
-        run: npm ci --no-audit --no-fund && npx tsc -b --noEmit
+        run: npm ci --no-audit --no-fund && npx tsc -p tsconfig.json --noEmit && npx vitest run
