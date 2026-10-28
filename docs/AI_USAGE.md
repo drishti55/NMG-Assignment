@@ -18,8 +18,8 @@ honesty requirements) and directed follow-up work such as the checkpoint-isolati
 ## Candidate's own review
 * What I did: wrote the build prompts and constraints; after the first build, asked
   for an audit of LangGraph checkpoint tenant isolation and for every claim (tests,
-  demo, evaluation) to be re-verified rather than trusted; reviewed the reports; chose
-  to redo the demo approvals myself so the outbox records a human approver.
+  demo, evaluation) to be re-verified rather than trusted; reviewed the reports; re-ran
+  the demo and made the approval decisions myself (CLI and web console).
 * What I changed by hand: no code was edited by hand.
 * Parts I can explain in the walkthrough, and parts I still need to study:
   **[CANDIDATE: fill in after studying docs/TECHNICAL_GUIDE.md]**
@@ -58,5 +58,5 @@ honesty requirements) and directed follow-up work such as the checkpoint-isolati
    Earlier runs approved drafts with `--by drishti`, and a verification script
    approved a draft that inverted the cancellation policy. Both happened only in
    local or scratch databases. The committed `out/outbox.jsonl` comes from a fresh
-   run in which every draft was read against the KB before approval, and the approver
-   is recorded truthfully as `claude-code-session`, not as the candidate.
+   run in which the candidate read the drafts and made the approval decisions
+   (CLI as `drishti`, web console as `operator`).

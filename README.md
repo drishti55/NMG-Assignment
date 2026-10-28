@@ -105,11 +105,10 @@ mode is presentation only; it does not change what the backend authorizes.
   **90 s** wall time, of which 78 s processing the 24 tickets. The Docker image, uv
   package cache and Ollama models were already on this machine; a new machine adds the
   `pgvector/pgvector:pg17` image pull and dependency downloads.
-* **Committed outputs** (`out/`) come from a fresh `make demo` in this repository
-  (85 s). Two drafts (NW-T01, HD-T09) were read against the KB and approved, and one
-  (NW-T02) was rejected with a reason; its redraft is still pending. The approver is
-  recorded as `claude-code-session` because the assistant, not the candidate, made
-  those decisions.
+* **Committed outputs** (`out/`) come from a fresh `make demo` run by the candidate,
+  who read the drafts and made the approval decisions: HD-T09 approved from the CLI
+  (`drishti`), NW-T01 approved in the web console (recorded under the console's local
+  login, `operator`).
 * **Evaluation** (5 runs × 24 tickets, drafting on): action accuracy 79.2%, category 87.5%,
   injection recall 100% with 0% false positives, stability 100%, about 10 minutes for
   5 runs (611 s); identical results in three separate evaluation sessions. See [EVAL](docs/EVAL.md).
