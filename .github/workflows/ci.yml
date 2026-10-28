@@ -1,0 +1,24 @@
+name: tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: relay
+          POSTGRES_DB: relay
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --frozen --group dev
+      # No Ollama in CI: the suite uses a deterministic fake model backend.
+      - run: uv run --frozen --group dev pytest -o addopts="" -q
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund && npx tsc -b --noEmit
