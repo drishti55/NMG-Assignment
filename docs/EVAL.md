@@ -55,50 +55,43 @@ Exceptions during runs: none
 - Recall 100.0%, false-positive rate 0.0%
 - False positives: none
 
-## Analysis
+# Evaluation Analysis
 
-These notes are written by hand from the generated tables above (they are appended
-verbatim by `relay/evaluation.py`; the numbers above are not edited).
+## 1. How I tested the system
 
-**Method.** `make eval RUNS=5` loads the 24 golden tickets from `data/*/tickets.jsonl`,
-runs each through the production LangGraph graph with business writes and the
-approval interrupt switched off, and scores action, category, priority and injection
-against `data/golden.jsonl`. `golden.jsonl` is read only by `relay/evaluation.py`.
-Temperature 0 and seed 7 for both models.
+- I ran `make eval RUNS=5` on the 24 golden tickets.
+- Each ticket went through the same LangGraph workflow used in production, with business writes and human approval disabled for evaluation.
+- I compared the predicted actions, categories, priorities, and injection detection against `data/golden.jsonl`.
+- Both models ran with temperature 0 and seed 7 to keep results consistent.
 
-**What reproduced.** All five runs produced identical actions and categories
-(stability 100%), and token totals were identical too (30,109 in / 2,295 out per
-run): at temperature 0 with a fixed seed, Ollama was fully repeatable on this machine.
-Two earlier 5-run evaluations (one on a slightly older build) produced the same
-accuracies and the same token totals, so the result reproduced three times. Wall time
-is the least stable number: 112–136 s per run in this session, 73–125 s in earlier
-ones, depending on what else the machine was doing. Treat timings
-as indicative. Model output can differ on other hardware, so a re-run elsewhere may not
-reproduce these numbers exactly.
+## 2. Consistency of results
 
-**Where it is wrong, and why.**
-* *HD-T05, HD-T06 (insurance, root-canal price):* the 1.5B triage model labels dental
-  pricing as clinical even after the lead's single re-check, and the policy trusts a
-  repeated clinical vote, so they escalate. This is a deliberate safe-side error
-  (DECISIONS.md §9).
-* *NW-T03 (cracked frame), HD-T11 (records, unknown customer):* the model proposes
-  ask_for_info but leaves `missing_info` empty; the lead's consistency rule then makes
-  them draft replies. NW-T03's draft still asks for the order id and photos.
-* *NW-T11 (Hinglish delivery question):* retrieval misses the shipping article; the
-  draft fails the content-support rule twice and escalates.
-* *NW-T12:* action correct (escalate, KB does not cover bulk discounts) but category
-  `warranty_repair` instead of `other`.
-* *Priority:* the model defaults to `normal`; deterministic floors fix urgent/high for
-  legal threats, injections, severe symptoms, money disputes, but nothing lowers
-  priority to `low` for general questions.
+- All five runs produced the same actions and categories, giving **100% stability**.
+- Token usage was also identical in every run: 30,109 input tokens and 2,295 output tokens.
+- I reproduced the same results across three evaluation sessions.
+- Execution time varied depending on system load, so I treat latency as an estimate rather than a fixed benchmark.
 
-**Injection.** Both golden injections (NW-T07, HD-T07) were flagged in every run, with
-no false positives; the deterministic detector alone catches both, so the result does
-not depend on the model.
+## 3. Where the system struggled
 
-**Next steps.**
-1. Name the required details per category in tenant config (e.g. warranty: order id
-   + photos) so ask_for_info does not depend on the 1.5B model listing them.
-2. Add a priority rubric step (deterministic "general information" detection) to fix `low`.
-3. Evaluate on a held-out set written independently of the prompts.
-4. Try `qwen2.5:3b` for triage and report the accuracy / latency trade-off.
+- **HD-T05 and HD-T06:** Dental insurance and root-canal pricing questions were escalated because the triage model repeatedly classified them as clinical.
+- **NW-T03 and HD-T11:** The model suggested asking for more information but did not specify what was missing. The system therefore generated replies instead. NW-T03 still asks for the order ID and photos.
+- **NW-T11:** The system failed to retrieve the correct shipping article for a Hinglish delivery question. After the draft failed the content-support check twice, the ticket was escalated.
+- **NW-T12:** The system correctly escalated the bulk-discount question, but assigned `warranty_repair` instead of `other`.
+- **Priority classification:** The model often defaults to `normal`. Existing rules handle urgent cases such as legal threats and severe symptoms, but general questions are not consistently assigned `low`.
+
+## 4. Prompt injection results
+
+- Both golden injection tickets, NW-T07 and HD-T07, were detected in all five runs.
+- No false positives were recorded on the golden set.
+- The deterministic detector caught both attacks, so detection did not depend on the model.
+
+These results are encouraging, but the evaluation set is small and cannot represent every possible attack.
+
+## 5. What I would improve next
+
+1. Define required information for each category in the tenant configuration, such as an order ID and photos for warranty claims.
+2. Add deterministic priority rules to identify general-information questions that should be marked `low`.
+3. Test the system on a separate dataset that was not used to design the prompts or rules.
+4. Try `qwen2.5:3b` for triage and compare its accuracy against the additional latency and resource usage.
+
+Overall, the system is consistent on the current dataset, but retrieval for Hinglish tickets and some category and priority decisions still need improvement.
